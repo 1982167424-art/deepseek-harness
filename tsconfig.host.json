@@ -293,6 +293,8 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
+    { "path": "./packages/client/ui-reasoning-translation" },
+    { "path": "./packages/client/ui-prompt-polish" },
     { "path": "./apps/cli" }
   ]
 }

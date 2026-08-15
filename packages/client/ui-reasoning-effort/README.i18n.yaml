@@ -1,0 +1,57 @@
+reasoningEffort:
+  zh: "思考强度"
+  en: "Thinking Intensity"
+effortOff:
+  zh: "关 ⚡（快速，不思考）"
+  en: "Off ⚡ (fast, no reasoning)"
+effortHigh:
+  zh: "高 💡（平衡思考深度与速度）"
+  en: "High 💡 (balance depth & speed)"
+effortMax:
+  zh: "最大 🧠（最慢，最强推理链）"
+  en: "Max 🧠 (slowest, strongest chain-of-thought)"
+reasoningIndicatorOff:
+  zh: "思考已关闭"
+  en: "Reasoning disabled"
+reasoningIndicatorActive:
+  zh: "使用 {level} 强度思考中…"
+  en: "Thinking at {level} intensity…"
+triggerAria:
+  zh: "思考强度选择器，当前 {state}"
+  en: "Reasoning effort selector, current {state}"
+toggleLabel:
+  zh: "深度思考"
+  en: "Deep Thinking"
+toggleAriaOn:
+  zh: "深度思考已开启"
+  en: "Deep thinking enabled"
+toggleAriaOff:
+  zh: "深度思考已关闭"
+  en: "Deep thinking disabled"
+dropdownOff:
+  zh: "关 ⚡"
+  en: "Off ⚡"
+dropdownHigh:
+  zh: "高 💡"
+  en: "High 💡"
+dropdownMax:
+  zh: "最大 🧠"
+  en: "Max 🧠"
+stateOff:
+  zh: "关闭"
+  en: "Off"
+stateHigh:
+  zh: "高"
+  en: "High"
+stateMax:
+  zh: "最大"
+  en: "Max"
+stateDefault:
+  zh: "跟随模型默认"
+  en: "Model default"
+statusSubmitting:
+  zh: "正在应用选择…"
+  en: "Applying selection…"
+statusFailed:
+  zh: "应用失败：{message}"
+  en: "Apply failed: {message}"
