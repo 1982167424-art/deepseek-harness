@@ -61,6 +61,9 @@ import {
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves `ctx.get('tasks')` to the background job registry.
 import type {} from '@deepseek-ai/dsh-jobs'
+// Type-only: merges the forwarded `task-board/updated` event declaration the
+// forwarding loop subscribes to via the api-remotes allowlist.
+import type {} from '@deepseek-ai/dsh-task-board/types'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'

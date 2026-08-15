@@ -97,6 +97,7 @@
     { "path": "./packages/client/ui-prompt-polish" },
     { "path": "./packages/client/ui-wallpaper" },
     { "path": "./packages/client/ui-themes-extra" },
+    { "path": "./packages/client/ui-task-board" },
     { "path": "./apps/web" }
   ]
 }

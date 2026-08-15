@@ -44,6 +44,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../tasks/task-board"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
