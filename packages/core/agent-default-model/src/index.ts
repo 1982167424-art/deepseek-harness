@@ -10,6 +10,16 @@ import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 
+export {
+  DEFAULT_EFFORT_WHEN_ENABLED,
+  EFFORT_FALLBACK_LABELS,
+  KNOWN_EFFORTS,
+  effectiveEffortId,
+  effectiveReasoningEffort,
+  settingsFromEffortId,
+} from './model-settings.ts'
+export type { SessionModelSettings } from './model-settings.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Default model selection for Agents created without an explicit model. */

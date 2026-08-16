@@ -1,0 +1,175 @@
+/** Draggable / resizable navigation panel shell styles. */
+.panel {
+  position: fixed;
+  z-index: var(--dsw-alias-z-index-floating, 50);
+  background: var(--dsw-alias-surface-primary);
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panelMinimized {
+  width: auto !important;
+  height: auto !important;
+  border-radius: 999px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-subtle);
+  background: var(--dsw-alias-surface-secondary);
+  user-select: none;
+}
+
+.dragHandle {
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--dsw-alias-text-secondary);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--dsw-alias-font-micro);
+  color: var(--dsw-alias-text-primary);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.iconButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-surface-hover);
+  color: var(--dsw-alias-text-primary);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.listInner {
+  display: flex;
+  flex-direction: column;
+}
+
+.turnRow {
+  padding: 6px 12px;
+  font: var(--dsw-alias-font-small);
+  color: var(--dsw-alias-text-primary);
+  background: var(--dsw-alias-surface-secondary);
+  font-weight: 600;
+  margin-top: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.turnRow:first-child {
+  margin-top: 0;
+}
+
+.turnRow:hover {
+  background: var(--dsw-alias-surface-hover);
+}
+
+.stepRow {
+  padding: 6px 12px 6px 24px;
+  font: var(--dsw-alias-font-micro);
+  color: var(--dsw-alias-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.stepRow:hover {
+  background: var(--dsw-alias-surface-hover);
+  color: var(--dsw-alias-text-primary);
+}
+
+.stepIcon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--dsw-alias-text-tertiary);
+}
+
+.stepKind {
+  flex: none;
+  color: var(--dsw-alias-text-tertiary);
+  width: 52px;
+}
+
+.stepPreview {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runningDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-accent-active, #22c55e);
+  flex: none;
+  display: inline-block;
+  margin-top: 6px;
+  animation: nav-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes nav-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 5px;
+  cursor: ew-resize;
+  background: transparent;
+}
+
+.resizeHandle:hover {
+  background: var(--dsw-alias-accent-active);
+  opacity: 0.3;
+}
+
+.launcher {
+  position: fixed;
+  z-index: var(--dsw-alias-z-index-floating, 50);
+}
+
+.empty {
+  padding: 16px;
+  font: var(--dsw-alias-font-micro);
+  color: var(--dsw-alias-text-tertiary);
+  text-align: center;
+}

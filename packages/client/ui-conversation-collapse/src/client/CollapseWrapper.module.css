@@ -1,0 +1,35 @@
+/** Collapse wrapper styles for reasoning and tool-call blocks. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.turnActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 0;
+  justify-content: flex-end;
+}
+
+.actionButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-text-secondary);
+  font: var(--dsw-alias-font-micro);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.actionButton:hover {
+  background: var(--dsw-alias-surface-hover);
+  color: var(--dsw-alias-text-primary);
+}
+
+.wrappedBlock {
+  margin: 4px 0;
+}

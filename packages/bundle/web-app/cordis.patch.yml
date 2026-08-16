@@ -66,6 +66,10 @@
       config:
         maxNoteBytes: 8192
 
+    # Task board: durable five-state kanban cards over the taskBoard Remote.
+    - id: task-board
+      name: '@deepseek-ai/dsh-task-board'
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -245,6 +249,17 @@
     # assistant-message action strip, over the messageFeedback Remote.
     - id: ui-message-feedback
       name: '@deepseek-ai/dsh-client-ui-message-feedback'
+
+    # Task board: the five-state kanban overlay with detail drawer, activity
+    # log, search/filter, and same-column drag reorder.
+    - id: ui-task-board
+      name: '@deepseek-ai/dsh-client-ui-task-board'
+
+    # Wallpaper studio: one dual-face row — the node half serves
+    # /api/wallpaper/* (upload, moderation, generate, polish) and the browser
+    # half is the studio panel under General settings.
+    - id: ui-wallpaper
+      name: '@deepseek-ai/dsh-client-ui-wallpaper'
 
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection
