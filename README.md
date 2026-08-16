@@ -20,7 +20,7 @@ Install `Node.js`, then run:
 npx @deepseek-ai/dsh web
 ```
 
-The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
+The command starts the Web UI, served at `http://127.0.0.1:4080` by default. See [Web UI guide](docs/user/guide/index.md).
 
 ### Run from source
 
