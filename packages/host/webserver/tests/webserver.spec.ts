@@ -28,23 +28,16 @@ afterEach(async () => {
 })
 
 /** Write a cordis.yml with one webserver row, then boot it through the real Loader. */
-async function loadComposition(
-  port = 0,
-  configOverrides: { eaddrinuseRetries?: number } = {},
-): Promise<Context> {
+async function loadComposition(port = 0): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-webserver-loader-'))
   const configPath = join(root, 'cordis.yml')
-  const configLines = [
+  await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
     `    port: ${String(port)}`,
-  ]
-  if (configOverrides.eaddrinuseRetries !== undefined) {
-    configLines.push(`    eaddrinuseRetries: ${String(configOverrides.eaddrinuseRetries)}`)
-  }
-  configLines.push('')
-  await writeFile(configPath, configLines.join('\n'))
+    '',
+  ].join('\n'))
 
   context = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'
@@ -217,31 +210,12 @@ describe('real Loader composition', () => {
     try {
       let failure: unknown
       try {
-        await loadComposition(takenPort, { eaddrinuseRetries: 0 })
+        await loadComposition(takenPort)
       } catch (error) {
         failure = error
       }
       second = context
       expect(String(failure)).toMatch(/failed to apply loader entry.*EADDRINUSE/)
-    } finally {
-      await second?.fiber.dispose()
-      context = first
-      if (root !== undefined) await rm(root, { recursive: true, force: true })
-      root = firstRoot
-    }
-  })
-
-  it('picks the next free port when the preferred one is taken', { timeout: 60_000 }, async () => {
-    const first = await loadComposition()
-    const takenPort = first.webServer.port
-    const firstRoot = root
-    root = undefined
-
-    let second: Context | undefined
-    try {
-      second = await loadComposition(takenPort, { eaddrinuseRetries: 3 })
-      expect(second.webServer.port).toBeGreaterThan(takenPort)
-      expect(second.webServer.port).toBeLessThanOrEqual(takenPort + 3)
     } finally {
       await second?.fiber.dispose()
       context = first

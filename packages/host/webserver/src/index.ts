@@ -45,24 +45,9 @@ export interface WebUpgradeRoute {
 export interface Config {
   /** Listen host; the two supported values are loopback and all-interfaces. */
   host: '127.0.0.1' | '0.0.0.0'
-  /**
-   * Listen port. Zero requests an OS-assigned port. A non-zero value is a
-   * best-effort preference: if that port is already bound (EADDRINUSE), the
-   * server scans up to {@link EADDRINUSE_RETRY_COUNT} consecutive ports and
-   * binds the first free one, logging a warn-level note with the final port.
-   */
+  /** Listen port; zero requests an OS-assigned port. */
   port: number
-  /**
-   * When the preferred {@link port} is occupied (EADDRINUSE), how many
-   * successor ports to probe before giving up. Defaults to
-   * {@link EADDRINUSE_RETRY_COUNT_DEFAULT}. Set to zero to treat any bind
-   * conflict as a fatal initialization failure (previous behaviour).
-   */
-  eaddrinuseRetries?: number
 }
-
-/** Default number of successor ports tried when the preferred port is in use. */
-export const EADDRINUSE_RETRY_COUNT_DEFAULT = 20
 
 /**
  * The browser HTTP carrier service. Activation listens immediately. Route
@@ -75,7 +60,6 @@ export class WebServer extends Service {
   static Config: z<Config> = z.object({
     host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required(),
     port: z.natural().max(65535).required(),
-    eaddrinuseRetries: z.natural().max(1000),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -230,36 +214,13 @@ export class WebServer extends Service {
     })
 
     await new Promise<void>((resolve, reject) => {
-      const retries = Math.min(1000, Math.max(0, this.config.eaddrinuseRetries ?? EADDRINUSE_RETRY_COUNT_DEFAULT))
-      const tryPort = (candidate: number, remaining: number): void => {
-        this.server.once('error', (err: Error) => {
-          this.server.off('error', reject)
-          const withCode = err as { code?: string }
-          if (withCode.code === 'EADDRINUSE' && remaining > 0 && candidate !== 0 && candidate < 65535) {
-            const next = candidate + 1
-            this.ctx.logger.warn(
-              `webserver: ${this.config.host}:${candidate} already in use (EADDRINUSE), retrying on ${next} (${remaining} attempt${remaining === 1 ? '' : 's'} left)`,
-            )
-            tryPort(next, remaining - 1)
-            return
-          }
-          reject(err)
-        })
-        this.server.listen(candidate, this.config.host, () => {
-          this.server.off('error', reject)
-          this.server.on('error', (err) => { this.ctx.logger.error(err) })
-          this.listenedPort = (this.server.address() as AddressInfo).port
-          if (candidate !== 0 && this.listenedPort !== candidate) {
-            this.ctx.logger.warn(
-              `webserver: preferred port ${candidate} was occupied; listening on ${this.config.host}:${this.listenedPort} instead`,
-            )
-          } else {
-            this.ctx.logger.info(`webserver: listening on ${this.config.host}:${this.listenedPort}`)
-          }
-          resolve()
-        })
-      }
-      tryPort(this.config.port, retries)
+      this.server.once('error', reject)
+      this.server.listen(this.config.port, this.config.host, () => {
+        this.server.off('error', reject)
+        this.server.on('error', (err) => { this.ctx.logger.error(err) })
+        this.listenedPort = (this.server.address() as AddressInfo).port
+        resolve()
+      })
     })
 
     // Node does not include upgraded sockets in closeAllConnections(). The service
