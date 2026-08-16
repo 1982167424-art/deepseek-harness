@@ -172,6 +172,55 @@ export const IMAGE_PROVIDERS: readonly MediaProvider[] = [
 /** Providers able to generate videos — still Volcengine + MiniMax (verified contracts). */
 export const VIDEO_PROVIDERS: readonly MediaProvider[] = ['volcengine', 'doubao', 'minimax']
 
+/**
+ * Providers able to generate 3D models. Volcengine/Doubao default with the
+ * ByteDance Seed 3D family via the Ark contents-task API. Pool is closed
+ * until each addition's wire contract is verified — see VIDEO_PROVIDERS for
+ * the same reasoning.
+ */
+export const MODEL_PROVIDERS: readonly MediaProvider[] = ['volcengine', 'doubao']
+
+/** Amount of detail in the generated mesh; higher = more triangles. */
+export type ModelSubdivision = 'low' | 'medium' | 'high'
+
+/** Output mesh+texture file format produced by the 3D task. */
+export type ModelFileFormat = 'glb' | 'obj' | 'usd' | 'usdz'
+
+/** 3D-generation result: bytes of a single file or zip-of-files (provider choice). */
+export interface GeneratedModel {
+  data: Uint8Array
+  /** File media type. `.glb` downloads as model/gltf-binary; zip-wrapped sets application/zip. */
+  mediaType: 'model/gltf-binary' | 'application/zip'
+  /** The exact format string the downstream unpacker should use. */
+  fileFormat: ModelFileFormat
+  subdivision: ModelSubdivision
+  provider: MediaProvider
+}
+
+/** Generate one 3D model from a text prompt (and an optional reference image). */
+export interface GenerateModelArgs {
+  /** The creative prompt. If empty, an imageUrl reference is required. */
+  prompt: string
+  /** Optional reference image URL (base64 or remote). Seed 3D 2.0 is image-to-3D; Hyper3D also accepts pure text. */
+  imageUrl?: string
+  subdivision?: ModelSubdivision
+  fileFormat?: ModelFileFormat
+  /** Provider pick, or 'auto'. Pinned non-model providers fail with INVALID_REQUEST. */
+  provider?: ProviderSelection
+  /** Override the provider's default model id (e.g. doubao-seed3d-2-0-260328 vs hyper3d-gen2-260112). */
+  model?: string
+  signal?: AbortSignal
+}
+
+/** Volcengine/Doubao ARK text/image-to-3D task request body (shared by Seed 3D and Hyper 3D). */
+export interface VolcengineModelGenRequest {
+  prompt: string
+  imageUrl?: string
+  subdivision?: ModelSubdivision
+  fileFormat?: ModelFileFormat
+  model?: string
+}
+
 /** Automatic selection: try each configured provider in listed order. */
 export type ProviderSelection = 'auto' | MediaProvider
 
@@ -276,7 +325,7 @@ export interface ModerationImageRequest {
 }
 
 /** Generation target a polished prompt is written for. */
-export type PolishTarget = 'image' | 'video'
+export type PolishTarget = 'image' | 'video' | 'model'
 
 /** One prompt-polish request: the user's rough idea plus the target medium. */
 export interface PolishPromptRequest {

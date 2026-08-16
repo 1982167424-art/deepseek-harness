@@ -22,11 +22,15 @@ import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-sett
 import type {
   DashScopeImageGenRequest,
   GeneratedImage,
+  GeneratedModel,
   GeneratedVideo,
+  GenerateModelArgs,
   ImageSize,
   ImageStyle,
   MediaProvider,
   MiniMaxImageGenRequest,
+  ModelFileFormat,
+  ModelSubdivision,
   ModerationResult,
   OpenAICompatibleImageGenRequest,
   PolishPromptRequest,
@@ -34,9 +38,10 @@ import type {
   PolishTarget,
   ProviderSelection,
   VolcengineImageGenRequest,
+  VolcengineModelGenRequest,
   VolcengineVideoGenRequest,
 } from './types.ts'
-import { IMAGE_PROVIDERS, VIDEO_PROVIDERS } from './types.ts'
+import { IMAGE_PROVIDERS, MODEL_PROVIDERS, VIDEO_PROVIDERS } from './types.ts'
 import {
   generateImageMiniMax,
   generateVideoMiniMax,
@@ -45,6 +50,7 @@ import {
 } from './providers/minimax.ts'
 import {
   generateImageVolcengine,
+  generateModelVolcengine,
   generateVideoVolcengine,
   moderateImageVolcengine,
   type VolcengineConfig,
@@ -61,13 +67,17 @@ import {
 export const name = 'llm-media-gen'
 export const inject = ['tools', 'llm']
 
-export { IMAGE_PROVIDERS, VIDEO_PROVIDERS } from './types.ts'
+export { IMAGE_PROVIDERS, MODEL_PROVIDERS, VIDEO_PROVIDERS } from './types.ts'
 export type {
   GeneratedImage,
+  GeneratedModel,
   GeneratedVideo,
+  GenerateModelArgs,
   ImageSize,
   ImageStyle,
   MediaProvider,
+  ModelFileFormat,
+  ModelSubdivision,
   PolishPromptRequest,
   PolishPromptResult,
   PolishTarget,
@@ -316,6 +326,8 @@ export interface ProviderEntryConfig {
   baseURL?: string
   imageModel?: string
   videoModel?: string
+  /** Model id for 3D generation (Seed 3D / Hyper 3D / Hitem 3D series). */
+  modelModel?: string
   arkBaseURL?: string
   groupIdEnv?: string
 }
@@ -339,6 +351,7 @@ function providerFields() {
     baseURL: z.string(),
     imageModel: z.string(),
     videoModel: z.string(),
+    modelModel: z.string(),
     arkBaseURL: z.string(),
     groupIdEnv: z.string(),
   })
@@ -439,15 +452,19 @@ export interface MediaGenSettings {
 /** Ordered providers to try for one capability under the current selection. */
 async function orderedProviders(
   settings: MediaGenSettings,
-  capability: 'image' | 'video',
+  capability: 'image' | 'video' | 'model',
   requested?: MediaProvider,
 ): Promise<ResolvedProvider[]> {
-  const pool = capability === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS
+  const pool = capability === 'video'
+    ? VIDEO_PROVIDERS
+    : capability === 'model'
+      ? MODEL_PROVIDERS
+      : IMAGE_PROVIDERS
   const pinned = requested ?? (settings.provider === 'auto' ? undefined : settings.provider)
   if (pinned !== undefined) {
-    if (capability === 'video' && !pool.includes(pinned)) {
+    if (capability !== 'image' && !pool.includes(pinned)) {
       throw new LlmError(
-        `llm-media-gen: provider '${pinned}' does not generate video`,
+        `llm-media-gen: provider '${pinned}' does not generate ${capability}`,
         'INVALID_REQUEST',
       )
     }
@@ -488,12 +505,18 @@ export interface GenerateVideoArgs {
   provider?: MediaProvider
 }
 
+const MODEL_SUBDIVISION_CHOICES: ModelSubdivision[] = ['low', 'medium', 'high']
+const MODEL_FILEFORMAT_CHOICES: ModelFileFormat[] = ['glb', 'obj', 'usd', 'usdz']
+
 const POLISH_SYSTEM_PROMPTS: Record<PolishTarget, string> = {
   image: '你是文生图提示词专家。把用户的粗略想法改写成一段高质量中文文生图提示词，'
     + '覆盖主体、场景构图、光线、色调、镜头视角、艺术风格与材质细节，40-120字。'
     + '直接输出提示词本身，不要任何解释或前后缀。',
   video: '你是文生视频提示词专家。把用户的粗略想法改写成一段高质量中文文生视频提示词，'
     + '覆盖主体与动作、镜头运动、场景推进、节奏与风格，40-120字。'
+    + '直接输出提示词本身，不要任何解释或前后缀。',
+  model: '你是文生3D提示词专家。把用户的粗略想法改写成一段高质量中文文生3D提示词，'
+    + '覆盖主体形态、几何特征、表面材质与纹理细节、用途场景、对称性与比例，40-120字。'
     + '直接输出提示词本身，不要任何解释或前后缀。',
 }
 
@@ -601,6 +624,45 @@ export class MediaGenService extends Service {
   }
 
   /**
+   * Generate one 3D model through Volcengine/Doubao Seed 3D / Hyper 3D.
+   * Supports pure text (Hyper3D default) as well as image-to-3D (Seed 3D 2.0)
+   * by passing a reference image URL.
+   * @param args Prompt plus optional image URL, subdivision level, file format, provider pin, and model id override.
+   * @param signal Aborts an in-flight provider request or polling wait.
+   * @returns The generated 3D asset bytes plus format and metadata.
+   */
+  async generateModel(args: GenerateModelArgs, signal?: AbortSignal): Promise<GeneratedModel> {
+    if (args.prompt.trim().length === 0 && (args.imageUrl?.trim().length ?? 0) === 0) {
+      throw new LlmError('llm-media-gen: generateModel requires a non-empty prompt or an imageUrl', 'INVALID_REQUEST')
+    }
+    const settings = this.settingsOf()
+    const requested: MediaProvider | undefined = args.provider === undefined || args.provider === 'auto'
+      ? undefined
+      : args.provider
+    const candidates = await orderedProviders(settings, 'model', requested)
+
+    const errors: string[] = []
+    for (const candidate of candidates) {
+      try {
+        if (candidate.kind === 'volcengine' || candidate.kind === 'doubao') {
+          const req: VolcengineModelGenRequest = { prompt: args.prompt }
+          if (args.imageUrl !== undefined) req.imageUrl = args.imageUrl
+          if (args.subdivision !== undefined) req.subdivision = args.subdivision
+          if (args.fileFormat !== undefined) req.fileFormat = args.fileFormat
+          if (args.model !== undefined) req.model = args.model
+          return await generateModelVolcengine(candidate.config, req, signal)
+        }
+      } catch (e) {
+        errors.push(`${candidate.kind}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    if (errors.length === 0) {
+      throw noProviderError('model')
+    }
+    throw new LlmError(`llm-media-gen: all 3D model providers failed: ${errors.join('; ')}`, 'TRANSPORT')
+  }
+
+  /**
    * Polish a rough idea into a generation-grade prompt via the configured
    * chat model (DeepSeek v4 flash by default). The polish call itself is a
    * charged model request and is never refunded on dissatisfaction.
@@ -658,10 +720,13 @@ export class MediaGenService extends Service {
   }
 }
 
-function noProviderError(capability: 'image' | 'video'): LlmError {
-  const envNames = (capability === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS)
-    .map(kind => PROVIDER_KEY_ENV[kind])
-    .join(' or ')
+function noProviderError(capability: 'image' | 'video' | 'model'): LlmError {
+  const providers = capability === 'video'
+    ? VIDEO_PROVIDERS
+    : capability === 'model'
+      ? MODEL_PROVIDERS
+      : IMAGE_PROVIDERS
+  const envNames = providers.map(kind => PROVIDER_KEY_ENV[kind]).join(' or ')
   return new LlmError(
     `llm-media-gen: no ${capability} generation provider is configured; set ${envNames}`,
     'MISSING_CREDENTIAL',
@@ -730,6 +795,16 @@ type VideoResult = {
     duration: number
     bytes: number
     provider: GeneratedVideo['provider']
+  }
+}
+
+type ModelResult = {
+  model: {
+    mediaType: GeneratedModel['mediaType']
+    fileFormat: GeneratedModel['fileFormat']
+    subdivision: GeneratedModel['subdivision']
+    bytes: number
+    provider: GeneratedModel['provider']
   }
 }
 
@@ -952,6 +1027,86 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'media_generate_model',
+    description:
+      + 'Generate a 3D model (GLB/OBJ/USD/USDZ) from a text prompt using ByteDance Seed 3D 2.0 and Hyper 3D '
+      + 'on Volcengine Ark. Pure-text prompts are supported by default; optionally pass an imageUrl for '
+      + 'image-to-3D mode. Generation is asynchronous and may take a few minutes. The produced file is '
+      + 'downloaded as bytes and reported with format and triangle count. Always polish the prompt first '
+      + 'using media_polish_prompt with target="model" when the user only has a rough idea.',
+    parameters: {
+      prompt: {
+        type: 'string',
+        required: true,
+        description: 'The 3D object description — describe shape, geometry, materials, proportions, and context.',
+      },
+      imageUrl: {
+        type: 'string',
+        description: 'Optional reference image URL or base64. Seed 3D 2.0 is image-to-3D only; Hyper 3D also accepts pure text.',
+      },
+      provider: {
+        type: 'string',
+        enum: [...MODEL_PROVIDERS],
+        description: 'Force one 3D model provider. Defaults to automatic ordered fallback.',
+      },
+      subdivision: {
+        type: 'string',
+        enum: [...MODEL_SUBDIVISION_CHOICES],
+        description: 'Mesh detail level (low = 100k, medium = 500k, high = 1M faces for Seed 3D 2.0). Defaults to medium.',
+      },
+      fileFormat: {
+        type: 'string',
+        enum: [...MODEL_FILEFORMAT_CHOICES],
+        description: 'Output file format. Defaults to glb.',
+      },
+      model: {
+        type: 'string',
+        description: 'Override model id (e.g. doubao-seed3d-2-0-260328 for image-to-3D, hyper3d-gen2-260112 for text-to-3D).',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          model: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              mediaType: { type: 'string', required: true },
+              fileFormat: { type: 'string', required: true },
+              subdivision: { type: 'string', required: true },
+              bytes: { type: 'integer', required: true },
+              provider: { type: 'string', required: true },
+            },
+          },
+        },
+      },
+      render: (_args, value) => {
+        const v = value as ModelResult
+        return [{
+          type: 'text',
+          text: `Generated 3D model via ${v.model.provider}: ${v.model.fileFormat.toUpperCase()}, ${v.model.subdivision} detail, ${Math.round(v.model.bytes / 1024)} KB.`,
+        }]
+      },
+    },
+    execute: async (args: GenerateModelArgs, exec: ToolExecution) => {
+      const mediaGen = ctx.get('mediaGen')
+      if (mediaGen === undefined) throw new Error('media_generate_model: mediaGen service unavailable')
+      const model = await mediaGen.generateModel(args, exec.signal)
+      return {
+        model: {
+          mediaType: model.mediaType,
+          fileFormat: model.fileFormat,
+          subdivision: model.subdivision,
+          bytes: model.data.length,
+          provider: model.provider,
+        },
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'media_polish_prompt',
     description:
       + 'Rewrite a rough creative idea into a generation-grade prompt using the configured '
@@ -967,7 +1122,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       target: {
         type: 'string',
-        enum: ['image', 'video'],
+        enum: ['image', 'video', 'model'],
         required: true,
         description: 'Which generation the polished prompt will feed.',
       },
@@ -1091,6 +1246,7 @@ async function resolveProviderEntry(
       if (entry.arkBaseURL !== undefined && entry.arkBaseURL.length > 0) config.arkBaseURL = entry.arkBaseURL
       if (imageModel !== undefined) config.imageModel = imageModel
       if (entry.videoModel !== undefined && entry.videoModel.length > 0) config.videoModel = entry.videoModel
+      if (entry.modelModel !== undefined && entry.modelModel.length > 0) config.modelModel = entry.modelModel
       return { kind, config }
     }
     case 'minimax': {

@@ -16,9 +16,10 @@ import type {} from '@deepseek-ai/dsh-storage'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {
-  GenerateImageArgs, GenerateVideoArgs, ImageSize, ImageStyle, MediaProvider,
+  GenerateImageArgs, GenerateModelArgs, GenerateVideoArgs, ImageSize, ImageStyle,
+  MediaProvider, ModelFileFormat, ModelSubdivision,
 } from '@deepseek-ai/dsh-llm-media-gen'
-import { IMAGE_PROVIDERS, VIDEO_PROVIDERS } from '@deepseek-ai/dsh-llm-media-gen'
+import { IMAGE_PROVIDERS, MODEL_PROVIDERS, VIDEO_PROVIDERS } from '@deepseek-ai/dsh-llm-media-gen'
 import z from '@deepseek-ai/schemastery'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {
@@ -317,6 +318,7 @@ export class WallpaperService extends Service {
         this.sendJson(res, 200, {
           image: [...IMAGE_PROVIDERS],
           video: [...VIDEO_PROVIDERS],
+          model: [...MODEL_PROVIDERS],
         })
       },
     }))
@@ -337,7 +339,12 @@ export class WallpaperService extends Service {
             this.sendJson(res, 400, { error: 'idea is required' })
             return
           }
-          const target: WallpaperGenerateKind = body?.target === 'video' ? 'video' : 'image'
+          const targetIn = typeof body?.target === 'string' ? body.target : 'image'
+          const target: WallpaperGenerateKind = targetIn === 'video'
+            ? 'video'
+            : targetIn === 'model'
+              ? 'model'
+              : 'image'
           const request: PolishWallpaperRequest = { idea, target }
           const result = await mediaGen.polishPrompt(request)
           const response: PolishWallpaperResponse = {
@@ -383,6 +390,35 @@ export class WallpaperService extends Service {
               mediaType: video.mediaType,
               provider: video.provider,
               prompt: request.prompt,
+            }))
+          } else if (request.kind === 'model') {
+            const args: GenerateModelArgs = { prompt: request.prompt }
+            if (request.provider !== undefined) args.provider = request.provider as MediaProvider
+            if (typeof request.imageUrl === 'string' && request.imageUrl.length > 0) {
+              args.imageUrl = request.imageUrl
+            }
+            const subdivisions: readonly ModelSubdivision[] = ['low', 'medium', 'high']
+            if (typeof request.subdivision === 'string'
+              && subdivisions.includes(request.subdivision as ModelSubdivision)) {
+              args.subdivision = request.subdivision as ModelSubdivision
+            }
+            const formats: readonly ModelFileFormat[] = ['glb', 'obj', 'usd', 'usdz']
+            if (typeof request.fileFormat === 'string'
+              && formats.includes(request.fileFormat as ModelFileFormat)) {
+              args.fileFormat = request.fileFormat as ModelFileFormat
+            }
+            if (typeof request.model === 'string' && request.model.length > 0) {
+              args.model = request.model
+            }
+            const model = await mediaGen.generateModel(args)
+            created.push(this.storeGeneratedMedia({
+              media: 'model',
+              bytes: model.data,
+              mediaType: model.mediaType,
+              provider: model.provider,
+              prompt: request.prompt,
+              modelFileFormat: model.fileFormat,
+              modelSubdivision: model.subdivision,
             }))
           } else {
             const args: GenerateImageArgs = { prompt: request.prompt }
@@ -544,12 +580,22 @@ export class WallpaperService extends Service {
   private parseGenerateRequest(body: Record<string, unknown> | undefined): GenerateWallpaperRequest | undefined {
     if (body === undefined) return undefined
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
-    if (prompt.length === 0) return undefined
-    const request: GenerateWallpaperRequest = {
-      kind: body.kind === 'video' ? 'video' : 'image',
-      prompt,
-    }
-    const providerPool = request.kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS
+    // Kind 'model' allows empty prompt if an imageUrl reference is supplied (image-to-3D).
+    const imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim().length > 0 ? body.imageUrl : undefined
+    if (prompt.length === 0 && imageUrl === undefined) return undefined
+    const kindIn = typeof body.kind === 'string' ? body.kind : 'image'
+    const kind: WallpaperGenerateKind = kindIn === 'video'
+      ? 'video'
+      : kindIn === 'model'
+        ? 'model'
+        : 'image'
+    const request: GenerateWallpaperRequest = { kind, prompt }
+    if (imageUrl !== undefined) request.imageUrl = imageUrl
+    const providerPool = kind === 'video'
+      ? VIDEO_PROVIDERS
+      : kind === 'model'
+        ? MODEL_PROVIDERS
+        : IMAGE_PROVIDERS
     if (typeof body.provider === 'string' && body.provider !== 'auto'
       && providerPool.includes(body.provider as MediaProvider)) {
       request.provider = body.provider
@@ -565,6 +611,19 @@ export class WallpaperService extends Service {
     if (typeof body.ratio === 'string' && ['16:9', '9:16', '1:1'].includes(body.ratio)) {
       request.ratio = body.ratio
     }
+    const subdivisions: readonly ModelSubdivision[] = ['low', 'medium', 'high']
+    if (typeof body.subdivision === 'string'
+      && subdivisions.includes(body.subdivision as ModelSubdivision)) {
+      request.subdivision = body.subdivision
+    }
+    const formats: readonly ModelFileFormat[] = ['glb', 'obj', 'usd', 'usdz']
+    if (typeof body.fileFormat === 'string'
+      && formats.includes(body.fileFormat as ModelFileFormat)) {
+      request.fileFormat = body.fileFormat
+    }
+    if (typeof body.model === 'string' && body.model.length > 0) {
+      request.model = body.model
+    }
     return request
   }
 
@@ -573,18 +632,21 @@ export class WallpaperService extends Service {
    * Generated media is provider-moderated upstream, so it enters as `'passed'`.
    */
   private storeGeneratedMedia(args: {
-    media: 'image' | 'video'
+    media: 'image' | 'video' | 'model'
     bytes: Uint8Array
     mediaType: string
     provider: string
     prompt: string
+    modelFileFormat?: string
+    modelSubdivision?: string
   }): WallpaperItem {
     const id = `wp_${randomUUID()}` as WallpaperId
     const tempUrl = `/api/wallpaper/temp/${id}`
     const shortPrompt = args.prompt.length > 24 ? `${args.prompt.slice(0, 24)}…` : args.prompt
+    const label = args.media === 'video' ? '动态' : args.media === 'model' ? '3D' : 'AI'
     const item: WallpaperItem = {
       id,
-      name: args.media === 'video' ? `动态 · ${shortPrompt}` : `AI · ${shortPrompt}`,
+      name: `${label} · ${shortPrompt}`,
       url: tempUrl,
       createdAt: Date.now(),
       moderationStatus: 'passed',
@@ -592,6 +654,8 @@ export class WallpaperService extends Service {
       media: args.media,
       provider: args.provider,
     }
+    if (args.modelFileFormat !== undefined) item.modelFileFormat = args.modelFileFormat
+    if (args.modelSubdivision !== undefined) item.modelSubdivision = args.modelSubdivision
     this.store.add(item)
     this.store.setBlob(id, { data: args.bytes, mediaType: args.mediaType })
     return item

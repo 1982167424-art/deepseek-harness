@@ -21,10 +21,14 @@ export interface WallpaperItem {
   moderationReason?: string | undefined
   moderationCategories?: string[] | undefined
   source: 'upload' | 'url' | 'generated'
-  /** Stored medium kind; generated videos carry `'video'`. */
-  media?: 'image' | 'video' | undefined
+  /** Stored medium kind; generated videos carry `'video'`, generated 3D assets carry `'model'`. */
+  media?: 'image' | 'video' | 'model' | undefined
   /** Provider that produced a generated wallpaper, e.g. `'volcengine'`. */
   provider?: string | undefined
+  /** When media is 'model', the declared 3D file format (glb/obj/usd/usdz). */
+  modelFileFormat?: string | undefined
+  /** When media is 'model', the mesh subdivision level used. */
+  modelSubdivision?: string | undefined
 }
 
 export interface WallpaperModerationResult {
@@ -59,7 +63,7 @@ export interface ListWallpapersResponse {
 }
 
 /** Generation target kinds the wallpaper generate API accepts. */
-export type WallpaperGenerateKind = 'image' | 'video'
+export type WallpaperGenerateKind = 'image' | 'video' | 'model'
 
 /** One wallpaper generation request; optional fields apply per `kind`. */
 export interface GenerateWallpaperRequest {
@@ -71,6 +75,10 @@ export interface GenerateWallpaperRequest {
   n?: number | undefined
   duration?: number | undefined
   ratio?: string | undefined
+  imageUrl?: string | undefined
+  subdivision?: string | undefined
+  fileFormat?: string | undefined
+  model?: string | undefined
 }
 
 /** Wallpapers created by one generation request, already stored in the library. */

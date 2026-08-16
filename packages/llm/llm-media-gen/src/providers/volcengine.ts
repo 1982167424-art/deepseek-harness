@@ -1,12 +1,16 @@
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import type {
   GeneratedImage,
+  GeneratedModel,
   GeneratedVideo,
   ImageSize,
   ImageStyle,
+  ModelFileFormat,
+  ModelSubdivision,
   ModerationImageRequest,
   ModerationResult,
   VolcengineImageGenRequest,
+  VolcengineModelGenRequest,
   VolcengineVideoGenRequest,
 } from '../types.ts'
 
@@ -14,12 +18,19 @@ const DEFAULT_VOLCENGINE_BASE_URL = 'https://visual.volcengineapi.com'
 const DEFAULT_VOLCENGINE_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com'
 const DEFAULT_VOLCENGINE_IMAGE_MODEL = 'doubao-seedream-5-0'
 const DEFAULT_VOLCENGINE_VIDEO_MODEL = 'doubao-seedance-2-5'
+/** Defaults to ByteDance Hyper3D Gen2 — the only ARK 3D model that supports pure text prompts. */
+const DEFAULT_VOLCENGINE_MODEL_MODEL = 'hyper3d-gen2-260112'
 const ARK_POLL_INTERVAL_MS = 2000
 const ARK_POLL_TIMEOUT_MS = 300_000
+const ARK_MODEL_POLL_TIMEOUT_MS = 15 * 60_000
 
 /** ARK model-series detection: Seedream images and Seedance videos live on the ARK API. */
 function usesArk(model: string): boolean {
   return /^(doubao-seedream|doubao-seedance)/.test(model)
+}
+/** 3D content-task models: the ByteDance Seed 3D and Hyper 3D families. */
+function usesArkModelGen(model: string): boolean {
+  return /^(doubao-seed3d|hyper3d|hitem3d)/.test(model)
 }
 
 function parseSize(size: ImageSize | undefined): { width: number; height: number } {
@@ -59,12 +70,14 @@ function normalizeBaseURL(baseURL: string | undefined): string {
 export interface VolcengineConfig {
   apiKey: string
   baseURL?: string
-  /** Ark (model-routing) base URL for Seedream/Seedance model series. */
+  /** Ark (model-routing) base URL for Seedream/Seedance/Seed3D model series. */
   arkBaseURL?: string
   /** Image model id; Seedream series route to the Ark images API. */
   imageModel?: string
   /** Video model id; Seedance series route to the Ark contents-task API. */
   videoModel?: string
+  /** 3D model id; Seed 3D / Hyper 3D series via the Ark contents-task API. */
+  modelModel?: string
 }
 
 function arkBase(config: VolcengineConfig): string {
@@ -503,4 +516,140 @@ export async function moderateImageVolcengine(
   } catch {
     return { safe: true, details: 'moderation parse error; allowing by default' }
   }
+}
+
+/**
+ * ByteDance Seed 3D 2.0 and Hyper 3D models share the Ark contents-task API:
+ * POST /api/v3/contents/generations/tasks with a `content[]` array of text
+ * (flags or creative prompt) and optionally an image, then poll GET until the
+ * task succeeds or fails. Returns the downloaded bytes for a single asset.
+ */
+async function generateModelArk(
+  config: VolcengineConfig,
+  request: VolcengineModelGenRequest,
+  signal?: AbortSignal,
+): Promise<GeneratedModel> {
+  const model = request.model ?? config.modelModel ?? DEFAULT_VOLCENGINE_MODEL_MODEL
+  const subdivision: ModelSubdivision = request.subdivision ?? 'medium'
+  const fileFormat: ModelFileFormat = request.fileFormat ?? 'glb'
+  const base = arkBase(config)
+  const headers: Record<string, string> = {
+    'authorization': `Bearer ${config.apiKey}`,
+    'content-type': 'application/json',
+  }
+
+  const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
+  const flagParts: string[] = []
+  flagParts.push(`--subdivisionlevel ${subdivision}`)
+  flagParts.push(`--fileformat ${fileFormat}`)
+  // Seed 3D 2.0 only supports flags in the text entry; Hyper 3D supports creative prompts there.
+  const textPayload = flagParts.join(' ')
+  content.push({ type: 'text', text: textPayload })
+  if (request.imageUrl !== undefined && request.imageUrl.length > 0) {
+    content.push({ type: 'image_url', image_url: { url: request.imageUrl } })
+  }
+  // For pure-text models (Hyper3D), the creative prompt lives in its own text chunk after flags.
+  if (request.prompt.length > 0) {
+    content.push({ type: 'text', text: request.prompt })
+  }
+
+  const submitBody = { model, content }
+
+  let submit: Response
+  try {
+    const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(submitBody) }
+    if (signal !== undefined) init.signal = signal
+    submit = await fetch(`${base}/api/v3/contents/generations/tasks`, init)
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw new LlmError('Volcengine Ark 3D task submission failed', 'TRANSPORT', { cause: error })
+  }
+  if (!submit.ok) {
+    const text = await submit.text().catch(() => '')
+    throw new LlmError(
+      `Volcengine Ark 3D submission error (HTTP ${submit.status}): ${text.slice(0, 500)}`,
+      `HTTP_${submit.status}`,
+      { status: submit.status },
+    )
+  }
+  const submitted = await submit.json() as { id?: string }
+  const taskId = submitted.id
+  if (taskId === undefined) {
+    throw new LlmError('Volcengine Ark 3D submission returned no task id', 'EMPTY_RESPONSE')
+  }
+
+  const deadline = Date.now() + ARK_MODEL_POLL_TIMEOUT_MS
+  let fileUrl: string | undefined
+  let returnedFormat: ModelFileFormat = fileFormat
+  for (;;) {
+    if (signal?.aborted === true) throw new Error('aborted')
+    if (Date.now() > deadline) {
+      throw new LlmError('Volcengine Ark 3D task did not settle in time', 'TIMEOUT')
+    }
+    await sleep(ARK_POLL_INTERVAL_MS, signal)
+    const pollInit: RequestInit = { headers }
+    if (signal !== undefined) pollInit.signal = signal
+    const poll = await fetch(`${base}/api/v3/contents/generations/tasks/${taskId}`, pollInit)
+    if (!poll.ok) {
+      throw new LlmError(
+        `Volcengine Ark 3D task poll error (HTTP ${poll.status})`,
+        `HTTP_${poll.status}`,
+        { status: poll.status },
+      )
+    }
+    const status = await poll.json() as {
+      status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+      error?: { message?: string }
+      content?: { file_url?: string }
+      fileformat?: ModelFileFormat
+    }
+    if (status.status === 'succeeded') {
+      fileUrl = status.content?.file_url
+      if (status.fileformat !== undefined) returnedFormat = status.fileformat
+      break
+    }
+    if (status.status === 'failed' || status.status === 'cancelled') {
+      throw new LlmError(
+        `Volcengine Ark 3D task ended as ${status.status}: ${status.error?.message ?? ''}`,
+        'PROVIDER_ERROR',
+      )
+    }
+  }
+  if (fileUrl === undefined) {
+    throw new LlmError('Volcengine Ark 3D task produced no file_url', 'EMPTY_RESPONSE')
+  }
+
+  const dlInit: RequestInit = {}
+  if (signal !== undefined) dlInit.signal = signal
+  const dl = await fetch(fileUrl, dlInit)
+  if (!dl.ok || !dl.body) {
+    throw new LlmError('Volcengine 3D asset download failed', 'TRANSPORT')
+  }
+  const bytes = new Uint8Array(await dl.arrayBuffer())
+  const mediaType: 'model/gltf-binary' | 'application/zip' =
+    returnedFormat === 'glb' && fileUrl.includes('.zip') === false ? 'model/gltf-binary' : 'application/zip'
+
+  return {
+    data: bytes,
+    mediaType,
+    fileFormat: returnedFormat,
+    subdivision,
+    provider: 'volcengine',
+  }
+}
+
+export async function generateModelVolcengine(
+  config: VolcengineConfig,
+  request: VolcengineModelGenRequest,
+  signal?: AbortSignal,
+): Promise<GeneratedModel> {
+  const model = request.model ?? config.modelModel ?? DEFAULT_VOLCENGINE_MODEL_MODEL
+  if (usesArkModelGen(model)) {
+    return generateModelArk(config, request, signal)
+  }
+  // Seed 3D only lives on Ark today; no legacy visual API exists for 3D tasks.
+  throw new LlmError(
+    `Volcengine 3D model id not recognized (expected doubao-seed3d-* or hyper3d-* or hitem3d-*): ${model}`,
+    'INVALID_REQUEST',
+  )
 }
