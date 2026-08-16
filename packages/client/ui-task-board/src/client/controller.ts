@@ -30,35 +30,47 @@ import type {
 } from '@deepseek-ai/dsh-task-board/types'
 
 /**
- * The seven Remote calls this controller needs. The generated face wraps
- * every business result in {@link RemoteResult}: a carrier failure arrives as
- * the `ok: false` branch rather than a rejection.
+ * Single-tool Remote entry following the CodeGraph pattern: one narrowed
+ * method instead of seven. Callers dispatch via the `op` discriminant; the
+ * widened result union lets `commit` peel every card-returning branch with
+ * the same code path used before.
  */
 export interface TaskBoardRemote {
-  list: () => Promise<RemoteResult<TaskBoardListResult>>
-  get: (request: { id: TaskId }) => Promise<RemoteResult<TaskBoardGetResult>>
-  create: (request: TaskBoardCreateRequest) => Promise<RemoteResult<TaskBoardCreateResult>>
-  update: (request: {
-    id: TaskId
-    ifRevision: number
-    title?: string
-    requirements?: string
-    acceptanceCriteria?: string | null
-    workspace?: string | null
-    agentPreset?: string | null
-  }) => Promise<RemoteResult<TaskBoardUpdateResult>>
-  transition: (request: {
-    id: TaskId
-    action: TaskAction
-    ifRevision: number
-    note?: string
-  }) => Promise<RemoteResult<TaskBoardTransitionResult>>
-  move: (request: {
-    id: TaskId
-    beforeTaskId: TaskId | null
-    ifRevision: number
-  }) => Promise<RemoteResult<TaskBoardMoveResult>>
-  remove: (request: { id: TaskId }) => Promise<RemoteResult<TaskBoardRemoveResult>>
+  execute: (
+    request:
+      | { readonly op: 'list' }
+      | { readonly op: 'get'; readonly id: TaskId }
+      | { readonly op: 'create'; readonly payload: TaskBoardCreateRequest }
+      | { readonly op: 'update'; readonly payload: {
+        id: TaskId
+        ifRevision: number
+        title?: string
+        requirements?: string
+        acceptanceCriteria?: string | null
+        workspace?: string | null
+        agentPreset?: string | null
+      } }
+      | { readonly op: 'transition'; readonly payload: {
+        id: TaskId
+        action: TaskAction
+        ifRevision: number
+        note?: string
+      } }
+      | { readonly op: 'move'; readonly payload: {
+        id: TaskId
+        beforeTaskId: TaskId | null
+        ifRevision: number
+      } }
+      | { readonly op: 'remove'; readonly id: TaskId },
+  ) => Promise<RemoteResult<
+    | TaskBoardListResult
+    | TaskBoardGetResult
+    | TaskBoardCreateResult
+    | TaskBoardUpdateResult
+    | TaskBoardTransitionResult
+    | TaskBoardMoveResult
+    | TaskBoardRemoveResult
+  >>
 }
 
 /** Load state of the board mirror. */
@@ -95,14 +107,6 @@ const INITIAL_VIEW: TaskBoardView = Object.freeze({
   detail: null,
   error: null,
 })
-
-/**
- * The widened outcome every card-returning mutation shares: the surviving
- * card, or a named business failure. Each Remote method's own result union is
- * a subset of this union, so one peel covers create, update, transition, and
- * move.
- */
-type TaskBoardMutationOutcome = TaskBoardSuccess<TaskView> | TaskBoardRejected<TaskBoardFailure>
 
 const OK: TaskBoardActionResult = Object.freeze({ ok: true })
 
@@ -212,7 +216,7 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
    * @returns the settled mutation result.
    */
   create(request: TaskBoardCreateRequest): Promise<TaskBoardActionResult> {
-    return this.mutate(async () => this.commit(await this.remote.create(request)))
+    return this.mutate(async () => this.commitCardMutation(await this.remote.execute({ op: 'create', payload: request })))
   }
 
   /**
@@ -231,7 +235,10 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
     return this.mutate(async () => {
       const observed = this.cardOf(id)
       if (observed === undefined) return this.missing()
-      return this.commit(await this.remote.update({ id, ...fields, ifRevision: observed.revision }))
+      return this.commitCardMutation(await this.remote.execute({
+        op: 'update',
+        payload: { id, ...fields, ifRevision: observed.revision },
+      }))
     })
   }
 
@@ -247,13 +254,15 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
     return this.mutate(async () => {
       const observed = this.cardOf(id)
       if (observed === undefined) return this.missing()
-      const result = await this.remote.transition({
-        id,
-        action,
-        ifRevision: observed.revision,
-        ...(note === undefined ? {} : { note }),
-      })
-      return this.commit(result)
+      return this.commitCardMutation(await this.remote.execute({
+        op: 'transition',
+        payload: {
+          id,
+          action,
+          ifRevision: observed.revision,
+          ...(note === undefined ? {} : { note }),
+        },
+      }))
     })
   }
 
@@ -267,12 +276,14 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
     return this.mutate(async () => {
       const observed = this.cardOf(id)
       if (observed === undefined) return this.missing()
-      const result = await this.remote.move({
-        id,
-        beforeTaskId,
-        ifRevision: observed.revision,
-      })
-      return this.commit(result)
+      return this.commitCardMutation(await this.remote.execute({
+        op: 'move',
+        payload: {
+          id,
+          beforeTaskId,
+          ifRevision: observed.revision,
+        },
+      }))
     })
   }
 
@@ -283,11 +294,12 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
    */
   remove(id: TaskId): Promise<TaskBoardActionResult> {
     return this.mutate(async () => {
-      const carried = await this.remote.remove({ id })
+      const carried = await this.remote.execute({ op: 'remove', id })
       if (this.disposed) return OK
       if (!carried.ok) return carrierFailure(carried.error)
       const result = carried.value
-      if (!result.ok) {
+      // Narrow: only the remove branch can reach here via the op discriminant.
+      if (result.ok === false) {
         return { ok: false, error: { code: result.error.code, message: result.error.code } }
       }
       const tasks = this.view.tasks.filter(task => task.id !== id)
@@ -309,14 +321,18 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
   /** Fetch the whole board and publish it as the seeded view. */
   private async load(): Promise<TaskBoardActionResult> {
     try {
-      const carried = await this.remote.list()
+      const carried = await this.remote.execute({ op: 'list' })
       if (this.disposed) return OK
       if (!carried.ok) {
         this.publish({ ...this.view, status: 'error', error: carried.error.message })
         return carrierFailure(carried.error)
       }
-      // `list` has no business rejection: its only failure is the carrier.
-      this.publish({ ...this.view, status: 'ready', tasks: carried.value.value.tasks, error: null })
+      // Narrow the widened union to the list branch by the op we dispatched.
+      const result = carried.value
+      if (result.ok === false) {
+        return { ok: false, error: { code: result.error.code, message: result.error.code } }
+      }
+      this.publish({ ...this.view, status: 'ready', tasks: result.value.tasks, error: null })
       return OK
     } catch (error) {
       if (this.disposed) return OK
@@ -329,11 +345,12 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
   /** Fetch one card's activity log and open its drawer. */
   private async loadDetail(id: TaskId): Promise<TaskBoardActionResult> {
     try {
-      const carried = await this.remote.get({ id })
+      const carried = await this.remote.execute({ op: 'get', id })
       if (this.disposed) return OK
       if (!carried.ok) return carrierFailure(carried.error)
       const result = carried.value
-      if (!result.ok) {
+      // Narrow: get branch carries TaskBoardGetResult (TaskDetail + not-found).
+      if (result.ok === false) {
         return { ok: false, error: { code: result.error.code, message: result.error.code } }
       }
       this.commitCard(result.value.task)
@@ -357,23 +374,42 @@ export class TaskBoardController implements HostObservable<TaskBoardView> {
   }
 
   /**
-   * Peel one card-returning mutation's carrier: a carrier failure as a
-   * settled action failure, the surviving card committed into the mirror, and
-   * a `revision-conflict` reconciled from the authoritative card the Host
-   * attached before the failure surfaces.
+   * Peel one card-returning mutation's widened execute result: a carrier
+   * failure as a settled action failure, the surviving card committed into
+   * the mirror, and a `revision-conflict` reconciled from the authoritative
+   * card the Host attached before the failure surfaces. The wider execute
+   * union is narrowed by inspection: only card-returning ops reach here.
    */
-  private commit(carried: RemoteResult<TaskBoardMutationOutcome>): TaskBoardActionResult {
+  private commitCardMutation(
+    carried: RemoteResult<
+      | TaskBoardListResult
+      | TaskBoardGetResult
+      | TaskBoardCreateResult
+      | TaskBoardUpdateResult
+      | TaskBoardTransitionResult
+      | TaskBoardMoveResult
+      | TaskBoardRemoveResult
+    >,
+  ): TaskBoardActionResult {
     if (this.disposed) return OK
     if (!carried.ok) return carrierFailure(carried.error)
     const result = carried.value
+    // Narrow: only TaskBoardCreate|Update|Transition|Move carry a TaskView.
+    // The other branches (list/get/remove) never route through this helper.
     if (result.ok) {
-      this.commitCard(result.value)
+      const value = result.value
+      if (typeof value === 'object' && value !== null && 'id' in value && 'status' in value && 'revision' in value) {
+        this.commitCard(value as TaskView)
+        return OK
+      }
+      // List / Detail / Remove branches should not reach this helper.
       return OK
     }
-    if (result.error.code === 'revision-conflict' && result.error.current !== null) {
-      this.commitCard(result.error.current)
+    const error = result.error
+    if (error.code === 'revision-conflict' && error.current !== null) {
+      this.commitCard(error.current)
     }
-    return { ok: false, error: { code: result.error.code, message: result.error.code } }
+    return { ok: false, error: { code: error.code, message: error.code } }
   }
 
   /** Replace one card's entry, keeping every other card's identity. */

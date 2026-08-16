@@ -3,39 +3,22 @@ import type {
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  TaskBoardCreateRequest,
-  TaskBoardCreateResult,
-  TaskBoardGetRequest,
-  TaskBoardGetResult,
-  TaskBoardListResult,
-  TaskBoardMoveRequest,
-  TaskBoardMoveResult,
-  TaskBoardRemoveRequest,
-  TaskBoardRemoveResult,
-  TaskBoardTransitionRequest,
-  TaskBoardTransitionResult,
-  TaskBoardUpdateRequest,
-  TaskBoardUpdateResult,
+  TaskBoardExecuteRequest,
+  TaskBoardExecuteResult,
 } from '@deepseek-ai/dsh-task-board/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
+  /**
+   * Single-tool Remote namespace following CodeGraph's pattern: one
+   * `execute` entry instead of seven narrow methods. Callers dispatch via
+   * the `op` discriminant on the request; the widened result carries the
+   * same business-failure vocabulary so client branching is unchanged.
+   */
   interface TaskBoardRemote {
-    list(): Promise<RemoteResult<TaskBoardListResult>>
-    get(request: TaskBoardGetRequest): Promise<RemoteResult<TaskBoardGetResult>>
-    create(request: TaskBoardCreateRequest): Promise<RemoteResult<TaskBoardCreateResult>>
-    update(request: TaskBoardUpdateRequest): Promise<RemoteResult<TaskBoardUpdateResult>>
-    transition(request: TaskBoardTransitionRequest): Promise<RemoteResult<TaskBoardTransitionResult>>
-    move(request: TaskBoardMoveRequest): Promise<RemoteResult<TaskBoardMoveResult>>
-    remove(request: TaskBoardRemoveRequest): Promise<RemoteResult<TaskBoardRemoveResult>>
+    execute(request: TaskBoardExecuteRequest): Promise<RemoteResult<TaskBoardExecuteResult>>
   }
   interface TypertRemoteMap {
-    'taskBoard/list': () => Promise<RemoteResult<TaskBoardListResult>>
-    'taskBoard/get': (request: TaskBoardGetRequest) => Promise<RemoteResult<TaskBoardGetResult>>
-    'taskBoard/create': (request: TaskBoardCreateRequest) => Promise<RemoteResult<TaskBoardCreateResult>>
-    'taskBoard/update': (request: TaskBoardUpdateRequest) => Promise<RemoteResult<TaskBoardUpdateResult>>
-    'taskBoard/transition': (request: TaskBoardTransitionRequest) => Promise<RemoteResult<TaskBoardTransitionResult>>
-    'taskBoard/move': (request: TaskBoardMoveRequest) => Promise<RemoteResult<TaskBoardMoveResult>>
-    'taskBoard/remove': (request: TaskBoardRemoveRequest) => Promise<RemoteResult<TaskBoardRemoveResult>>
+    'taskBoard/execute': (request: TaskBoardExecuteRequest) => Promise<RemoteResult<TaskBoardExecuteResult>>
   }
   interface TypertRemoteNamespaceMap {
     'taskBoard': TaskBoardRemote

@@ -86,19 +86,15 @@ async function titles(harness: Harness): Promise<string[]> {
 }
 
 describe('TaskBoardService public contract', () => {
-  it('publishes the exact Gateway namespace and Remote method names', async () => {
+  it('publishes the exact Gateway namespace and the single-tool Remote method', async () => {
     const { board } = await setup()
     const binding = board.typertRemote
     expect(binding.serviceKey).toBe('taskBoard')
     expect(binding.namespace).toBe('taskBoard')
+    // Follows CodeGraph's single-tool pattern: one narrowed entry instead of
+    // seven narrow methods. The discriminant dispatches inside execute().
     expect(remoteMethods(board)).toEqual([
-      { method: 'list', invocation: { kind: 'direct' } },
-      { method: 'get', invocation: { kind: 'direct' } },
-      { method: 'create', invocation: { kind: 'direct' } },
-      { method: 'update', invocation: { kind: 'direct' } },
-      { method: 'transition', invocation: { kind: 'direct' } },
-      { method: 'move', invocation: { kind: 'direct' } },
-      { method: 'remove', invocation: { kind: 'direct' } },
+      { method: 'execute', invocation: { kind: 'direct' } },
     ])
   })
 

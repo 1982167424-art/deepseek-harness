@@ -308,6 +308,42 @@ export interface TaskBoardChange {
   readonly ids: readonly TaskId[]
 }
 
+/**
+ * Unified single-tool request dispatching every operation through one entry.
+ *
+ * Modeled after CodeGraph's approach: one strong entry point steers callers
+ * better than a menu of narrow methods, and saves a narrower type surface in
+ * every session's tool manifest. The `op` discriminant selects which
+ * operation runs; its payload carries exactly the fields that operation needs.
+ *
+ * Operations whose narrower former counterparts still exist as internal
+ * methods map 1:1 onto the old request types below.
+ */
+export type TaskBoardExecuteRequest =
+  | { readonly op: 'list' }
+  | { readonly op: 'get'; readonly id: TaskId }
+  | { readonly op: 'create'; readonly payload: TaskBoardCreateRequest }
+  | { readonly op: 'update'; readonly payload: TaskBoardUpdateRequest }
+  | { readonly op: 'transition'; readonly payload: TaskBoardTransitionRequest }
+  | { readonly op: 'move'; readonly payload: TaskBoardMoveRequest }
+  | { readonly op: 'remove'; readonly id: TaskId }
+
+/**
+ * Widened result every execute operation returns: either a board-wide view
+ * (list), a detail view with activity log (get), a surviving card plus its
+ * new revision (create/update/transition/move), or a stable absent marker
+ * (remove). Business failures share the existing rejection vocabulary and
+ * keep their precise code so clients can branch the same way they do today.
+ */
+export type TaskBoardExecuteResult =
+  | TaskBoardListResult
+  | TaskBoardGetResult
+  | TaskBoardCreateResult
+  | TaskBoardUpdateResult
+  | TaskBoardTransitionResult
+  | TaskBoardMoveResult
+  | TaskBoardRemoveResult
+
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**

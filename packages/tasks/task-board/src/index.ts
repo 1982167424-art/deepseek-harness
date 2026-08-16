@@ -28,17 +28,17 @@ import type {
   TaskAction,
   TaskBoardCreateRequest,
   TaskBoardCreateResult,
+  TaskBoardExecuteRequest,
+  TaskBoardExecuteResult,
   TaskBoardFailure,
   TaskBoardFieldTooLong,
   TaskBoardReferenceImagesTooMany,
-  TaskBoardGetRequest,
   TaskBoardGetResult,
   TaskBoardListResult,
   TaskBoardListValue,
   TaskBoardMoveRequest,
   TaskBoardMoveResult,
   TaskBoardRejected,
-  TaskBoardRemoveRequest,
   TaskBoardRemoveResult,
   TaskBoardRemoveValue,
   TaskBoardSuccess,
@@ -230,10 +230,34 @@ export class TaskBoardService extends TypertRemoteService {
   }
 
   /**
-   * Read the whole board in board order.
-   * @returns every card; the client filters and searches locally.
+   * Single unified entry point for every task-board operation — modeled on
+   * CodeGraph's single-tool pattern. One narrowed Remote surface steers
+   * callers better than a menu of seven independent methods and saves a
+   * smaller type footprint in every session's protocol manifest.
+   *
+   * The `op` discriminant selects an operation; each arm delegates to the
+   * matching internal implementation (kept as plain methods so host-side
+   * code can still call a narrow shape directly when that reads better).
+   *
+   * @param request - the discriminated-union request naming one of the seven
+   *   operations and carrying its payload.
+   * @returns the widened execute result, whose branches match the former
+   *   per-operation result unions exactly so callers branch the same way.
    */
-  @Remote('list')
+  @Remote('execute')
+  execute(request: TaskBoardExecuteRequest): Promise<TaskBoardExecuteResult> {
+    switch (request.op) {
+      case 'list': return this.list()
+      case 'get': return this.get({ id: request.id })
+      case 'create': return this.create(request.payload)
+      case 'update': return this.update(request.payload)
+      case 'transition': return this.transition(request.payload)
+      case 'move': return this.move(request.payload)
+      case 'remove': return this.remove({ id: request.id })
+    }
+  }
+
+  /** @internal Read the whole board in board order. */
   async list(): Promise<TaskBoardListResult> {
     const rows: TaskRow[] = []
     for (const [, row] of this.requireTable().entries()) rows.push(row)
@@ -243,25 +267,15 @@ export class TaskBoardService extends TypertRemoteService {
     return success(value)
   }
 
-  /**
-   * Read one task with its full activity log.
-   * @param request - the task to read.
-   * @returns the card and its log, or `task-not-found`.
-   */
-  @Remote('get')
-  async get(request: TaskBoardGetRequest): Promise<TaskBoardGetResult> {
+  /** @internal Read one task with its full activity log. */
+  async get(request: { readonly id: TaskId }): Promise<TaskBoardGetResult> {
     const row = this.requireTable().get(request.id)
     if (row === undefined) return rejected({ code: 'task-not-found', id: request.id })
     const detail: TaskDetail = Object.freeze({ task: viewOf(row), events: row.events })
     return success(detail)
   }
 
-  /**
-   * Create one task card, optionally already running.
-   * @param request - the card to create.
-   * @returns the created card, or a validation failure.
-   */
-  @Remote('create')
+  /** @internal Create one task card, optionally already running. */
   create(request: TaskBoardCreateRequest): Promise<TaskBoardCreateResult> {
     const title = this.resolveRequired(request.title, 'title', this.textBounds.maxTitleBytes)
     if (!title.ok) return Promise.resolve(title)
@@ -310,13 +324,7 @@ export class TaskBoardService extends TypertRemoteService {
     })
   }
 
-  /**
-   * Edit the descriptive fields of one task; workflow changes go through
-   * `transition`. A matching no-op returns the stored card without a write.
-   * @param request - target, desired fields, and observed revision.
-   * @returns the committed card or an explicit business failure.
-   */
-  @Remote('update')
+  /** @internal Edit the descriptive fields of one task. */
   update(request: TaskBoardUpdateRequest): Promise<TaskBoardUpdateResult> {
     const title = request.title === undefined ? null : this.resolveRequired(request.title, 'title', this.textBounds.maxTitleBytes)
     if (title !== null && !title.ok) return Promise.resolve(title)
@@ -339,8 +347,6 @@ export class TaskBoardService extends TypertRemoteService {
       : this.resolveOptional(request.agentPreset, 'agentPreset')
     if (agentPreset !== null && !agentPreset.ok) return Promise.resolve(agentPreset)
 
-    // Early returns above guarantee every resolved local is a success here;
-    // `undefined` in the edit set means clear, an absent key means keep.
     const edits: {
       title?: string
       requirements?: string
@@ -377,12 +383,7 @@ export class TaskBoardService extends TypertRemoteService {
     }))
   }
 
-  /**
-   * Walk one task through a guarded workflow transition.
-   * @param request - target, action, observed revision, optional note.
-   * @returns the committed card or an explicit business failure.
-   */
-  @Remote('transition')
+  /** @internal Walk one task through a guarded workflow transition. */
   transition(request: TaskBoardTransitionRequest): Promise<TaskBoardTransitionResult> {
     return this.serialize(() => this.mutateRow<TaskBoardTransitionResult>(request.id, request.ifRevision, (row) => {
       const spec: TaskTransitionSpec = TASK_TRANSITIONS[request.action]
@@ -396,14 +397,7 @@ export class TaskBoardService extends TypertRemoteService {
     }))
   }
 
-  /**
-   * Reorder one task inside its current column; cross-column placement is a
-   * workflow transition, not a drag. A matching no-op returns the stored
-   * card without a write.
-   * @param request - dragged task, drop anchor, and observed revision.
-   * @returns the committed card or an explicit business failure.
-   */
-  @Remote('move')
+  /** @internal Reorder one task inside its current column. */
   move(request: TaskBoardMoveRequest): Promise<TaskBoardMoveResult> {
     return this.serialize(async () => {
       const table = this.requireTable()
@@ -415,8 +409,6 @@ export class TaskBoardService extends TypertRemoteService {
 
       let order = this.moveOrderWithin(row.status, request.id, request.beforeTaskId)
       if (order === undefined) {
-        // Midpoint spacing between the anchor pair has exhausted; restore
-        // full spacing and recompute against the fresh column.
         await this.renormalizeColumn(row.status)
         order = this.moveOrderWithin(row.status, request.id, request.beforeTaskId)
       }
@@ -438,14 +430,8 @@ export class TaskBoardService extends TypertRemoteService {
     })
   }
 
-  /**
-   * Remove one task. Absence is successful; the removed id is still named in
-   * `task-board/updated` so mirrors drop the card.
-   * @param request - the task to remove.
-   * @returns the stable absent postcondition or `task-not-found`.
-   */
-  @Remote('remove')
-  remove(request: TaskBoardRemoveRequest): Promise<TaskBoardRemoveResult> {
+  /** @internal Remove one task. */
+  remove(request: { readonly id: TaskId }): Promise<TaskBoardRemoveResult> {
     return this.serialize(async () => {
       const removed = await this.requireTable().delete(request.id)
       if (!removed) return rejected({ code: 'task-not-found', id: request.id })

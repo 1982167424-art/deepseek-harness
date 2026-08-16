@@ -36,7 +36,12 @@ function card(overrides: Partial<TaskView> = {}): TaskView {
   }
 }
 
-/** A recording fake Remote whose per-method answers are scripted per call. */
+/**
+ * Per-op scripted answers. The single-tool execute() unwraps the `op`
+ * discriminant and routes to the matching handler; this keeps the test
+ * script surface identical to the old seven-method shape so call sites
+ * don't need to rewrite every assertion.
+ */
 type Script = {
   list?: () => Promise<unknown>
   get?: (request: { id: TaskId }) => Promise<unknown>
@@ -48,30 +53,48 @@ type Script = {
 }
 
 /**
- * A recording fake Remote. Scripts return the *business* result; this wraps
- * it in the carrier envelope the generated face uses. A script may also
- * return an already-enveloped carrier failure to exercise that branch.
+ * A recording fake Remote implementing the single-tool execute() surface.
+ * Scripts return the *business* result; this wraps it in the carrier
+ * envelope the generated face uses. A script may also return an already-
+ * enveloped carrier failure to exercise that branch.
  */
 function fakeRemote(script: Script = {}) {
   const calls: { method: string; request: unknown }[] = []
   const carrier = (v: unknown): boolean =>
     typeof v === 'object' && v !== null && 'ok' in v && v.ok === false
       && 'error' in v && 'details' in ((v as { error: object }).error ?? {})
-  const record = <M extends keyof Script>(method: M, real: Script[M], fallback: unknown) =>
-    (request: never): Promise<never> => {
-      calls.push({ method: method as string, request })
-      const business = real === undefined ? Promise.resolve(fallback) : (real as (r: never) => Promise<unknown>)(request)
-      return business.then(v => (carrier(v) ? v : { ok: true, value: v })) as Promise<never>
-    }
-  const remote = {
-    list: record('list', script.list, { ok: true, value: { tasks: [card()] } }),
-    get: record('get', script.get, { ok: true, value: { task: card(), events: [] } satisfies TaskDetail }),
-    create: record('create', script.create, { ok: true, value: card() }),
-    update: record('update', script.update, { ok: true, value: card() }),
-    transition: record('transition', script.transition, { ok: true, value: card() }),
-    move: record('move', script.move, { ok: true, value: card() }),
-    remove: record('remove', script.remove, { ok: true, value: { absent: true } }),
-  } as unknown as TaskBoardRemote
+  const handlers: Record<ScriptKey, { handler: Script[ScriptKey]; fallback: unknown }> = {
+    list: { handler: script.list, fallback: { ok: true, value: { tasks: [card()] } } },
+    get: { handler: script.get, fallback: { ok: true, value: { task: card(), events: [] } satisfies TaskDetail } },
+    create: { handler: script.create, fallback: { ok: true, value: card() } },
+    update: { handler: script.update, fallback: { ok: true, value: card() } },
+    transition: { handler: script.transition, fallback: { ok: true, value: card() } },
+    move: { handler: script.move, fallback: { ok: true, value: card() } },
+    remove: { handler: script.remove, fallback: { ok: true, value: { absent: true } } },
+  }
+  type ScriptKey = keyof Script
+  type ExecuteRequest = Parameters<TaskBoardRemote['execute']>[0]
+  const remote: TaskBoardRemote = {
+    execute: (request: ExecuteRequest): Promise<ReturnType<TaskBoardRemote['execute']>> => {
+      const op = request.op as ScriptKey
+      const inner = handlers[op]
+      // Extract the per-op payload the controller actually sent.
+      // create/update/transition/move carry a payload; get/remove carry id.
+      let innerRequest: unknown
+      if ('payload' in request) innerRequest = request.payload
+      else if ('id' in request) innerRequest = { id: request.id }
+      else innerRequest = undefined
+      calls.push({ method: op, request: innerRequest ?? request })
+      const { handler, fallback } = inner
+      const business = handler === undefined
+        ? Promise.resolve(fallback)
+        : (handler as (...args: never[]) => Promise<unknown>)(
+          ...(innerRequest === undefined ? [] : [innerRequest] as never),
+        )
+      return business.then(v =>
+        (carrier(v) ? v : { ok: true, value: v })) as ReturnType<TaskBoardRemote['execute']>
+    },
+  }
   return { remote, calls }
 }
 
