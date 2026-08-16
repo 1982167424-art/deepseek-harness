@@ -1,36 +1,176 @@
 /**
  * Shared media-generation domain types: providers, requests, results, and
- * the prompt-polish contract.
+ * the prompt-polish contract. Provider list is aligned with CherryStudio's
+ * 62 built-in providers; a handful of historical aliases (`siliconflow`,
+ * `newapi`, `volcengine`) are kept so existing cordis.yml keeps working.
  * @module @deepseek-ai/dsh-llm-media-gen/types
  */
 
-/** Every media provider kind, aligned with CherryStudio's painting matrix. */
+/** Every media provider kind, aligned with CherryStudio plus legacy aliases. */
 export type MediaProvider =
-  | 'volcengine'
-  | 'minimax'
+  // Direct model providers (23 from CherryStudio)
   | 'openai'
+  | 'anthropic'
+  | 'gemini'
+  | 'deepseek'
+  | 'mistral'
+  | 'grok'
+  | 'nvidia'
+  | 'cerebras'
+  | 'mimo'
   | 'zhipu'
+  | 'moonshot'
+  | 'baichuan'
   | 'dashscope'
+  | 'stepfun'
+  | 'doubao'
+  | 'infini'
+  | 'minimax'
+  | 'yi'
+  | 'hunyuan'
+  | 'perplexity'
+  | 'jina'
+  | 'voyageai'
+  | 'huggingface'
+  // Cloud platforms (9)
+  | 'azure-openai'
+  | 'vertexai'
+  | 'aws-bedrock'
+  | 'github'
+  | 'copilot'
+  | 'tencent-cloud-ti'
+  | 'baidu-cloud'
+  | 'modelscope'
+  | 'xirang'
+  // Local & self-hosted (5; keep `newapi` alias alongside CherryStudio's `new-api`)
+  | 'ollama'
+  | 'lmstudio'
+  | 'ovms'
+  | 'gpustack'
+  | 'new-api'
+  | 'newapi'
+  // Inference platforms (5)
+  | 'groq'
+  | 'together'
+  | 'fireworks'
+  | 'hyperbolic'
+  | 'poe'
+  // Aggregation & gateway (23; keep `siliconflow` alias alongside `silicon`)
+  | 'cherryin'
+  | 'silicon'
   | 'siliconflow'
   | 'aihubmix'
+  | 'ppio'
   | 'tokenflux'
-  | 'newapi'
+  | '302ai'
+  | 'aionly'
+  | 'cherryai'
+  | 'openrouter'
+  | 'dmxapi'
+  | 'ocoolai'
+  | 'alayanew'
+  | 'burncloud'
+  | 'cephalon'
+  | 'lanyun'
+  | 'ph8'
+  | 'sophnet'
+  | 'qiniu'
+  | 'longcat'
+  | 'gateway'
+  | 'lmsys'
+  | 'aity'
+  | 'datasmith'
+  // Historical aliases kept for cordis.yml back-compat
+  | 'volcengine'
 
-/** Every provider in automatic-try order; mirrors the default model policy. */
+/**
+ * Every image provider in automatic-try order. Volcengine/Doubao come first
+ * (Seedream 5.0 defaults), then OpenAI gpt-image-2, then Chinese domestic
+ * vendors, then aggregations, then cloud/local/custom (each needs explicit
+ * configuration and so is skipped by auto when unset).
+ */
 export const IMAGE_PROVIDERS: readonly MediaProvider[] = [
+  // Volcengine / Doubao default, Seedream 5.0 (aliases, both kept)
   'volcengine',
+  'doubao',
+  // OpenAI default, gpt-image-2
   'openai',
+  // MiniMax (also video-capable)
   'minimax',
+  // Chinese domestic LLM vendors with native image endpoints
   'zhipu',
   'dashscope',
+  'hunyuan',
+  'moonshot',
+  'yi',
+  'baichuan',
+  'stepfun',
+  'infini',
+  // Foreign OEMs whose gateways sometimes expose /v1/images
+  'anthropic',
+  'gemini',
+  'deepseek',
+  'mistral',
+  'nvidia',
+  'perplexity',
+  'groq',
+  'together',
+  'fireworks',
+  'hyperbolic',
+  // Aggregation (OpenAI compatible, most carry image models)
+  'silicon',
   'siliconflow',
   'aihubmix',
+  'ppio',
   'tokenflux',
+  '302ai',
+  'aionly',
+  'cherryai',
+  'openrouter',
+  'dmxapi',
+  'ocoolai',
+  'alayanew',
+  'burncloud',
+  'cephalon',
+  'lanyun',
+  'ph8',
+  'sophnet',
+  'qiniu',
+  'longcat',
+  'gateway',
+  'lmsys',
+  'aity',
+  'datasmith',
+  'cherryin',
+  // Platform & marketplace
+  'vertexai',
+  'aws-bedrock',
+  'github',
+  'modelscope',
+  'huggingface',
+  'tencent-cloud-ti',
+  'baidu-cloud',
+  'xirang',
+  // Exotica (most LLM only, no images yet)
+  'grok',
+  'cerebras',
+  'mimo',
+  'jina',
+  'voyageai',
+  'copilot',
+  'poe',
+  // Local self-hosted & passthrough (no defaults, user config required)
+  'ollama',
+  'lmstudio',
+  'ovms',
+  'gpustack',
+  'azure-openai',
+  'new-api',
   'newapi',
 ]
 
-/** Providers able to generate videos. Image generation covers all of them. */
-export const VIDEO_PROVIDERS: readonly MediaProvider[] = ['volcengine', 'minimax']
+/** Providers able to generate videos — still Volcengine + MiniMax (verified contracts). */
+export const VIDEO_PROVIDERS: readonly MediaProvider[] = ['volcengine', 'doubao', 'minimax']
 
 /** Automatic selection: try each configured provider in listed order. */
 export type ProviderSelection = 'auto' | MediaProvider
@@ -98,7 +238,7 @@ export interface MiniMaxImageGenRequest {
   model?: string
 }
 
-/** OpenAI-compatible image request shared by six providers. */
+/** OpenAI-compatible image request shared by every non-dedicated provider. */
 export interface OpenAICompatibleImageGenRequest {
   prompt: string
   size?: ImageSize

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-wallpaper-multiprovider-generation-and-polish.md
-2026-08-16-wallpaper-multiprovider-generation-and-polish.md: 4c653bbce30713bceca40235d80b41c434518ce3
-2026-08-16-wallpaper-multiprovider-generation-and-polish.zh.md: c0c5acae6d24e72086606edb393c1c3a1d858b27
+2026-08-16-wallpaper-multiprovider-generation-and-polish.md: 1b78cf609e5cfa466800437f7e8bbf940d16676c
+2026-08-16-wallpaper-multiprovider-generation-and-polish.zh.md: b78df396a7c08bcafbd77e348ba24cccd9830cd9

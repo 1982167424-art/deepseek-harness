@@ -76,40 +76,238 @@ export type {
 
 const NS = settingsNamespace('llm-media-gen')
 
+// CherryStudio alignment: every provider maps to an env name so MISSING_CREDENTIAL
+// errors tell the user exactly which key to set. Providers without a universal key
+// convention use `<UPPERCASED>_API_KEY` (matching CherryStudio's credential-seam keys).
 const PROVIDER_KEY_ENV: Record<MediaProvider, string> = {
-  volcengine: 'VOLCENGINE_API_KEY',
-  minimax: 'MINIMAX_API_KEY',
+  // Direct
   openai: 'OPENAI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+  mistral: 'MISTRAL_API_KEY',
+  grok: 'GROK_API_KEY',
+  nvidia: 'NVIDIA_API_KEY',
+  cerebras: 'CEREBRAS_API_KEY',
+  mimo: 'MIMO_API_KEY',
   zhipu: 'ZHIPU_API_KEY',
+  moonshot: 'MOONSHOT_API_KEY',
+  baichuan: 'BAICHUAN_API_KEY',
   dashscope: 'DASHSCOPE_API_KEY',
+  stepfun: 'STEPFUN_API_KEY',
+  doubao: 'DOUBAO_API_KEY',
+  infini: 'INFINI_API_KEY',
+  minimax: 'MINIMAX_API_KEY',
+  yi: 'YI_API_KEY',
+  hunyuan: 'HUNYUAN_API_KEY',
+  perplexity: 'PERPLEXITY_API_KEY',
+  jina: 'JINA_API_KEY',
+  voyageai: 'VOYAGEAI_API_KEY',
+  huggingface: 'HUGGINGFACE_API_KEY',
+  // Cloud
+  'azure-openai': 'AZURE_OPENAI_API_KEY',
+  vertexai: 'VERTEXAI_API_KEY',
+  'aws-bedrock': 'AWS_BEDROCK_API_KEY',
+  github: 'GITHUB_API_KEY',
+  copilot: 'COPILOT_API_KEY',
+  'tencent-cloud-ti': 'TENCENT_CLOUD_TI_API_KEY',
+  'baidu-cloud': 'BAIDU_CLOUD_API_KEY',
+  modelscope: 'MODELSCOPE_API_KEY',
+  xirang: 'XIRANG_API_KEY',
+  // Local
+  ollama: 'OLLAMA_API_KEY',
+  lmstudio: 'LMSTUDIO_API_KEY',
+  ovms: 'OVMS_API_KEY',
+  gpustack: 'GPUSTACK_API_KEY',
+  'new-api': 'NEW_API_API_KEY',
+  newapi: 'NEWAPI_API_KEY',
+  // Inference
+  groq: 'GROQ_API_KEY',
+  together: 'TOGETHER_API_KEY',
+  fireworks: 'FIREWORKS_API_KEY',
+  hyperbolic: 'HYPERBOLIC_API_KEY',
+  poe: 'POE_API_KEY',
+  // Aggregation
+  cherryin: 'CHERRYIN_API_KEY',
+  silicon: 'SILICON_API_KEY',
   siliconflow: 'SILICONFLOW_API_KEY',
   aihubmix: 'AIHUBMIX_API_KEY',
+  ppio: 'PPIO_API_KEY',
   tokenflux: 'TOKENFLUX_API_KEY',
-  newapi: 'NEWAPI_API_KEY',
+  '302ai': '302AI_API_KEY',
+  aionly: 'AIONLY_API_KEY',
+  cherryai: 'CHERRYAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+  dmxapi: 'DMXAPI_API_KEY',
+  ocoolai: 'OCOOLAI_API_KEY',
+  alayanew: 'ALAYANEW_API_KEY',
+  burncloud: 'BURNCLOUD_API_KEY',
+  cephalon: 'CEPHALON_API_KEY',
+  lanyun: 'LANYUN_API_KEY',
+  ph8: 'PH8_API_KEY',
+  sophnet: 'SOPHNET_API_KEY',
+  qiniu: 'QINIU_API_KEY',
+  longcat: 'LONGCAT_API_KEY',
+  gateway: 'GATEWAY_API_KEY',
+  lmsys: 'LMSYS_API_KEY',
+  aity: 'AITY_API_KEY',
+  datasmith: 'DATASMITH_API_KEY',
+  // Back-compat aliases (volcengine is the historical id for doubao on ARK)
+  volcengine: 'VOLCENGINE_API_KEY',
 }
 
 const PROVIDER_DEFAULT_BASE_URL: Record<MediaProvider, string | undefined> = {
-  volcengine: undefined,
-  minimax: undefined,
+  // Direct
   openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  deepseek: 'https://api.deepseek.com/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  grok: 'https://api.x.ai/v1',
+  nvidia: 'https://integrate.api.nvidia.com/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  mimo: undefined,
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  moonshot: 'https://api.moonshot.cn/v1',
+  baichuan: 'https://api.baichuan-ai.com/v1',
   dashscope: 'https://dashscope.aliyuncs.com/api/v1',
+  stepfun: 'https://api.stepfun.com/v1',
+  doubao: undefined,
+  infini: 'https://cloud.infini-ai.com/v1',
+  minimax: undefined,
+  yi: 'https://api.lingyiwanwu.com/v1',
+  hunyuan: 'https://api.hunyuan.cloud.tencent.com/v1',
+  perplexity: 'https://api.perplexity.ai',
+  jina: 'https://api.jina.ai/v1',
+  voyageai: 'https://api.voyageai.com/v1',
+  huggingface: 'https://api-inference.huggingface.co/models',
+  // Cloud
+  'azure-openai': undefined,
+  vertexai: undefined,
+  'aws-bedrock': undefined,
+  github: 'https://models.inference.ai.azure.com',
+  copilot: undefined,
+  'tencent-cloud-ti': undefined,
+  'baidu-cloud': undefined,
+  modelscope: 'https://api-inference.modelscope.cn/v1',
+  xirang: undefined,
+  // Local
+  ollama: 'http://localhost:11434/v1',
+  lmstudio: 'http://localhost:1234/v1',
+  ovms: undefined,
+  gpustack: 'http://localhost:39311/v1',
+  'new-api': undefined,
+  newapi: undefined,
+  // Inference
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
+  fireworks: 'https://api.fireworks.ai/inference/v1',
+  hyperbolic: 'https://api.hyperbolic.xyz/v1',
+  poe: 'https://api.poe.com/v1',
+  // Aggregation
+  cherryin: 'https://cherry.in/v1',
+  silicon: 'https://api.siliconflow.cn/v1',
   siliconflow: 'https://api.siliconflow.cn/v1',
   aihubmix: 'https://aihubmix.com/v1',
+  ppio: 'https://api.ppinfra.com/v1',
   tokenflux: 'https://api.tokenflux.ai/v1',
-  newapi: undefined,
+  '302ai': 'https://api.302.ai/v1',
+  aionly: 'https://api.aionly.com/v1',
+  cherryai: 'https://api.cherryai.art/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  dmxapi: 'https://www.dmxapi.com/v1',
+  ocoolai: 'https://api.ocoolai.com/v1',
+  alayanew: 'https://api.alayanew.ai/v1',
+  burncloud: 'https://api.burn.cloud/v1',
+  cephalon: 'https://cephalonai.ai/v1',
+  lanyun: 'https://api.lanyunai.com/v1',
+  ph8: 'https://app.taoli.ai/v1',
+  sophnet: 'https://api.sophgo.cc/v1',
+  qiniu: 'https://api.qiniuapi.com/v1',
+  longcat: 'https://api.longcat.cloud/v1',
+  gateway: undefined,
+  lmsys: 'https://hub.lmsys.ai/api/v1',
+  aity: 'https://api.aity.ai/v1',
+  datasmith: 'https://api.datasmith.ai/v1',
+  // Back-compat alias (doubao on Volcengine ARK — same api-key seam, own baseURL)
+  volcengine: undefined,
 }
 
 const PROVIDER_DEFAULT_IMAGE_MODEL: Record<MediaProvider, string | undefined> = {
-  volcengine: 'doubao-seedream-5-0',
-  minimax: 'abab6.5-img',
+  // Direct — only vendors with a documented native or OpenAI-compatible image endpoint ship a default
   openai: 'gpt-image-2',
+  anthropic: undefined,
+  gemini: undefined,
+  deepseek: undefined,
+  mistral: undefined,
+  grok: undefined,
+  nvidia: undefined,
+  cerebras: undefined,
+  mimo: undefined,
   zhipu: 'cogview-4',
+  moonshot: undefined,
+  baichuan: undefined,
   dashscope: 'wanx2.1-t2i-turbo',
+  stepfun: undefined,
+  doubao: 'doubao-seedream-5-0',
+  infini: undefined,
+  minimax: 'abab6.5-img',
+  yi: undefined,
+  hunyuan: 'hunyuan-image-turbo-latest',
+  perplexity: undefined,
+  jina: undefined,
+  voyageai: undefined,
+  huggingface: 'black-forest-labs/FLUX.1-schnell',
+  // Cloud
+  'azure-openai': undefined,
+  vertexai: 'imagen-3.0-generate-001-preview',
+  'aws-bedrock': 'stability.stable-image-ultra-v1:0',
+  github: undefined,
+  copilot: undefined,
+  'tencent-cloud-ti': undefined,
+  'baidu-cloud': undefined,
+  modelscope: 'AI-ModelScope/Wan2.1-T2I-1.3B',
+  xirang: undefined,
+  // Local
+  ollama: undefined,
+  lmstudio: undefined,
+  ovms: undefined,
+  gpustack: undefined,
+  'new-api': undefined,
+  newapi: undefined,
+  // Inference (common FLUX variants through OpenAI-compatible gateways)
+  groq: undefined,
+  together: 'black-forest-labs/FLUX.1-schnell',
+  fireworks: 'black-forest-labs/FLUX.1-schnell',
+  hyperbolic: 'black-forest-labs/FLUX.1-dev',
+  poe: undefined,
+  // Aggregation
+  cherryin: undefined,
+  silicon: 'Kwai-Kolors/Kolors',
   siliconflow: 'Kwai-Kolors/Kolors',
   aihubmix: 'gpt-image-1',
+  ppio: 'black-forest-labs/FLUX.1-schnell',
   tokenflux: 'gpt-image-1',
-  newapi: undefined,
+  '302ai': 'gpt-image-1',
+  aionly: undefined,
+  cherryai: undefined,
+  openrouter: 'black-forest-labs/flux-schnell',
+  dmxapi: 'gpt-image-1',
+  ocoolai: undefined,
+  alayanew: undefined,
+  burncloud: undefined,
+  cephalon: undefined,
+  lanyun: undefined,
+  ph8: undefined,
+  sophnet: undefined,
+  qiniu: undefined,
+  longcat: undefined,
+  gateway: undefined,
+  lmsys: undefined,
+  aity: undefined,
+  datasmith: undefined,
+  // Back-compat alias (Seedream 5.0 via Volcengine ARK)
+  volcengine: 'doubao-seedream-5-0',
 }
 
 /** Per-provider deployment overrides; every field has a built-in default. */
@@ -122,17 +320,12 @@ export interface ProviderEntryConfig {
   groupIdEnv?: string
 }
 
-export interface Config {
+/** One optional config slot per CherryStudio-aligned provider id. */
+type ProviderConfigs = Record<MediaProvider, ProviderEntryConfig>
+
+/** Loose structural check: keyed by MediaProvider; every value is optional. */
+export interface Config extends Partial<ProviderConfigs> {
   provider: ProviderSelection
-  volcengine?: ProviderEntryConfig
-  minimax?: ProviderEntryConfig
-  openai?: ProviderEntryConfig
-  zhipu?: ProviderEntryConfig
-  dashscope?: ProviderEntryConfig
-  siliconflow?: ProviderEntryConfig
-  aihubmix?: ProviderEntryConfig
-  tokenflux?: ProviderEntryConfig
-  newapi?: ProviderEntryConfig
   defaultImageSize?: ImageSize
   defaultImageStyle?: ImageStyle
   defaultVideoDuration?: number
@@ -151,20 +344,23 @@ function providerFields() {
   })
 }
 
-export const Config: z<Config> = z.object({
-  provider: z.union([
-    'auto', 'volcengine', 'minimax', 'openai', 'zhipu', 'dashscope',
-    'siliconflow', 'aihubmix', 'tokenflux', 'newapi',
-  ]).default('auto'),
-  volcengine: providerFields(),
-  minimax: providerFields(),
-  openai: providerFields(),
-  zhipu: providerFields(),
-  dashscope: providerFields(),
-  siliconflow: providerFields(),
-  aihubmix: providerFields(),
-  tokenflux: providerFields(),
-  newapi: providerFields(),
+// Exhaustive provider union for the z schema — every member of IMAGE_PROVIDERS.
+const PROVIDER_ENUM = [
+  'auto' as const,
+  ...IMAGE_PROVIDERS,
+]
+
+// Build the per-provider config z.object by iterating the provider list so
+// adding a new provider id is a single edit in types.ts, not 3 edits here.
+function providerConfigShape(): z<Record<MediaProvider, ReturnType<typeof providerFields>>> {
+  const fields: Partial<Record<MediaProvider, ReturnType<typeof providerFields>>> = {}
+  for (const p of IMAGE_PROVIDERS) fields[p] = providerFields()
+  return fields as z<Record<MediaProvider, ReturnType<typeof providerFields>>>
+}
+
+export const Config = z.object({
+  provider: z.union(PROVIDER_ENUM).default('auto'),
+  ...providerConfigShape(),
   defaultImageSize: z.union([
     '256x256',
     '512x512',
@@ -193,7 +389,7 @@ export const Config: z<Config> = z.object({
     provider: z.string().default('deepseek'),
     model: z.string().default('deepseek-v4-flash'),
   }).default({ enabled: true, provider: 'deepseek', model: 'deepseek-v4-flash' }),
-})
+}) as unknown as z<Config>
 
 const IMAGE_SIZE_CHOICES: ImageSize[] = [
   '256x256',
@@ -218,11 +414,15 @@ const IMAGE_STYLE_CHOICES: ImageStyle[] = [
   '3d_render',
 ]
 
-/** Resolved per-provider runtime configuration for one configured provider. */
+/**
+ * Resolved per-provider runtime configuration. Dedicated adapters own their
+ * discriminated branches (`volcengine/doubao`, `minimax`, `dashscope`); every
+ * other CherryStudio provider routes through the OpenAI-compatible adapter.
+ */
 export type ResolvedProvider =
-  | { kind: 'volcengine'; config: VolcengineConfig }
+  | { kind: 'volcengine' | 'doubao'; config: VolcengineConfig }
   | { kind: 'minimax'; config: MiniMaxConfig }
-  | { kind: 'openai' | 'zhipu' | 'siliconflow' | 'aihubmix' | 'tokenflux' | 'newapi'; config: OpenAICompatibleConfig }
+  | { kind: Exclude<MediaProvider, 'volcengine' | 'doubao' | 'minimax' | 'dashscope'>; config: OpenAICompatibleConfig }
   | { kind: 'dashscope'; config: DashScopeConfig }
 
 export interface MediaGenSettings {
@@ -326,7 +526,8 @@ export class MediaGenService extends Service {
     for (const candidate of candidates) {
       try {
         switch (candidate.kind) {
-          case 'volcengine': {
+          case 'volcengine':
+          case 'doubao': {
             const req: VolcengineImageGenRequest = { prompt: args.prompt, size, n, style }
             if (args.negativePrompt !== undefined) req.negativePrompt = args.negativePrompt
             const results = await generateImageVolcengine(candidate.config, req, signal)
@@ -379,7 +580,7 @@ export class MediaGenService extends Service {
     const errors: string[] = []
     for (const candidate of candidates) {
       try {
-        if (candidate.kind === 'volcengine') {
+        if (candidate.kind === 'volcengine' || candidate.kind === 'doubao') {
           const req: VolcengineVideoGenRequest = { prompt: args.prompt, duration }
           if (args.fps !== undefined) req.fps = args.fps
           if (args.size !== undefined) req.size = args.size
@@ -877,13 +1078,14 @@ async function resolveProviderEntry(
   raw: () => Config,
   kind: MediaProvider,
 ): Promise<ResolvedProvider | undefined> {
-  const entry = raw()[kind] ?? {}
+  const entry: ProviderEntryConfig = (raw() as Partial<Record<MediaProvider, ProviderEntryConfig | undefined>>)[kind] ?? {}
   const key = await getCredential(ctx, entry.apiKeyEnv ?? PROVIDER_KEY_ENV[kind])
   if (key === undefined) return undefined
   const baseURL = entry.baseURL ?? PROVIDER_DEFAULT_BASE_URL[kind]
   const imageModel = entry.imageModel ?? PROVIDER_DEFAULT_IMAGE_MODEL[kind]
   switch (kind) {
-    case 'volcengine': {
+    case 'volcengine':
+    case 'doubao': {
       const config: VolcengineConfig = { apiKey: key }
       if (baseURL !== undefined) config.baseURL = baseURL
       if (entry.arkBaseURL !== undefined && entry.arkBaseURL.length > 0) config.arkBaseURL = entry.arkBaseURL
