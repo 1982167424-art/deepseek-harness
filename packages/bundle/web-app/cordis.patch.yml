@@ -70,6 +70,11 @@
     - id: task-board
       name: '@deepseek-ai/dsh-task-board'
 
+    # Media generation capability: ordered-fallback image/video/3D providers
+    # plus the charged prompt-polish service the wallpaper studio calls.
+    - id: llm-media-gen
+      name: '@deepseek-ai/dsh-llm-media-gen'
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -254,6 +259,12 @@
     # log, search/filter, and same-column drag reorder.
     - id: ui-task-board
       name: '@deepseek-ai/dsh-client-ui-task-board'
+
+    # Wallpaper studio: one dual-face row — the node half serves
+    # /api/wallpaper/* (upload, moderation, generate, polish) and the browser
+    # half is the studio panel under General settings.
+    - id: ui-wallpaper
+      name: '@deepseek-ai/dsh-client-ui-wallpaper'
 
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection

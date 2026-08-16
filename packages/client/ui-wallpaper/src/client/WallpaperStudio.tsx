@@ -55,7 +55,10 @@ export function WallpaperStudio({
   const [genIdea, setGenIdea] = useState('')
   const [genPrompt, setGenPrompt] = useState('')
   const [genProvider, setGenProvider] = useState('auto')
-  const [providers, setProviders] = useState<GenerateProviders>({ image: [], video: [] })
+  const [genImageUrl, setGenImageUrl] = useState('')
+  const [genSubdivision, setGenSubdivision] = useState<'low' | 'medium' | 'high'>('medium')
+  const [genFileFormat, setGenFileFormat] = useState<'glb' | 'obj' | 'usd' | 'usdz'>('glb')
+  const [providers, setProviders] = useState<GenerateProviders>({ image: [], video: [], model: [] })
   const [polishing, setPolishing] = useState(false)
   const [polished, setPolished] = useState<{ prompt: string; provider: string; model: string } | undefined>()
   const [generating, setGenerating] = useState(false)
@@ -87,7 +90,7 @@ export function WallpaperStudio({
   useEffect(() => {
     if (selectedId !== undefined) {
       const item = items.find(i => i.id === selectedId)
-      if (item !== undefined) {
+      if (item !== undefined && item.media !== 'model') {
         setPreviewUrl(item.url)
         setPreviewIsVideo(item.media === 'video')
       }
@@ -201,7 +204,9 @@ export function WallpaperStudio({
 
   const onGenerate = useCallback(async () => {
     const prompt = genPrompt.trim()
-    if (prompt.length === 0 || generating) return
+    const imageUrl = genKind === 'model' ? genImageUrl.trim() : ''
+    // Kind 'model' runs with an empty prompt when a reference image is present.
+    if ((prompt.length === 0 && imageUrl.length === 0) || generating) return
     setGenerating(true)
     setGenError(undefined)
     try {
@@ -209,6 +214,9 @@ export function WallpaperStudio({
         kind: genKind,
         prompt,
         provider: genProvider,
+        ...(genKind === 'model'
+          ? { imageUrl: imageUrl.length > 0 ? imageUrl : undefined, subdivision: genSubdivision, fileFormat: genFileFormat }
+          : {}),
       })
       if (!result.ok) {
         setGenError(result.error ?? t('error.generateFailed'))
@@ -216,9 +224,13 @@ export function WallpaperStudio({
       }
       const created = result.items ?? []
       if (created.length > 0) {
-        setSelectedId(created[0]?.id)
-        setPreviewUrl(created[0]?.url)
-        setPreviewIsVideo(created[0]?.media === 'video')
+        const first = created[0]
+        setSelectedId(first?.id)
+        // A 3D asset has no image/video preview; keep the current preview.
+        if (first?.media !== 'model') {
+          setPreviewUrl(first?.url)
+          setPreviewIsVideo(first?.media === 'video')
+        }
       }
       void refresh()
     } catch (error: unknown) {
@@ -226,7 +238,7 @@ export function WallpaperStudio({
     } finally {
       setGenerating(false)
     }
-  }, [genPrompt, generating, genKind, genProvider, generateWallpaper, refresh, t])
+  }, [genPrompt, generating, genKind, genProvider, genImageUrl, genSubdivision, genFileFormat, generateWallpaper, refresh, t])
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
@@ -325,6 +337,13 @@ export function WallpaperStudio({
             >
               {t('generate.kindVideo')}
             </button>
+            <button
+              type="button"
+              className={`${css.kindBtn} ${genKind === 'model' ? css.kindBtnActive : ''}`}
+              onClick={() => { setGenKind('model'); setGenProvider('auto') }}
+            >
+              {t('generate.kindModel')}
+            </button>
           </div>
         </div>
 
@@ -389,6 +408,47 @@ export function WallpaperStudio({
           />
         </div>
 
+        {genKind === 'model' && (
+          <>
+            <div className={css.genRow}>
+              <label className={css.label}>{t('generate.modelImageUrlLabel')}</label>
+              <input
+                type="text"
+                className={css.urlInput}
+                placeholder={t('generate.modelImageUrlPlaceholder')}
+                value={genImageUrl}
+                onChange={e => { setGenImageUrl(e.target.value) }}
+              />
+            </div>
+            <div className={css.genRow}>
+              <label className={css.label}>{t('generate.modelSubdivisionLabel')}</label>
+              <select
+                className={css.select}
+                value={genSubdivision}
+                onChange={e => { setGenSubdivision(e.target.value as 'low' | 'medium' | 'high') }}
+              >
+                <option value="low">{t('generate.modelSubdivisionLow')}</option>
+                <option value="medium">{t('generate.modelSubdivisionMedium')}</option>
+                <option value="high">{t('generate.modelSubdivisionHigh')}</option>
+              </select>
+            </div>
+            <div className={css.genRow}>
+              <label className={css.label}>{t('generate.modelFileFormatLabel')}</label>
+              <select
+                className={css.select}
+                value={genFileFormat}
+                onChange={e => { setGenFileFormat(e.target.value as 'glb' | 'obj' | 'usd' | 'usdz') }}
+              >
+                <option value="glb">GLB</option>
+                <option value="obj">OBJ</option>
+                <option value="usd">USD</option>
+                <option value="usdz">USDZ</option>
+              </select>
+            </div>
+            <p className={css.polishNotice}>{t('generate.modelSlowNotice')}</p>
+          </>
+        )}
+
         <div className={css.genRow}>
           <label className={css.label}>{t('generate.providerLabel')}</label>
           <select
@@ -397,7 +457,11 @@ export function WallpaperStudio({
             onChange={e => { setGenProvider(e.target.value) }}
           >
             <option value="auto">{t('generate.providerAuto')}</option>
-            {(genKind === 'video' ? providers.video : providers.image).map(provider => (
+            {(genKind === 'video'
+              ? providers.video
+              : genKind === 'model'
+                ? providers.model
+                : providers.image).map(provider => (
               <option key={provider} value={provider}>{provider}</option>
             ))}
           </select>
@@ -408,7 +472,10 @@ export function WallpaperStudio({
         <button
           type="button"
           className={css.primaryBtn}
-          disabled={generating || genPrompt.trim().length === 0}
+          disabled={generating
+            || (genKind === 'model'
+              ? genPrompt.trim().length === 0 && genImageUrl.trim().length === 0
+              : genPrompt.trim().length === 0)}
           onClick={() => { void onGenerate() }}
         >
           {generating ? t('generate.generating') : t('generate.submit')}
@@ -422,15 +489,33 @@ export function WallpaperStudio({
             className={`${css.thumbnail} ${selectedId === item.id ? css.selected : ''}`}
             onClick={() => {
               setSelectedId(item.id)
-              setPreviewUrl(item.url)
+              // A 3D asset has no image/video preview; keep the current preview.
+              if (item.media !== 'model') {
+                setPreviewUrl(item.url)
+                setPreviewIsVideo(item.media === 'video')
+              }
             }}
           >
             {item.media === 'video'
               ? <video className={css.thumbVideo} src={item.url} muted loop playsInline preload="metadata" />
-              : <div className={css.thumbImage} style={{ backgroundImage: `url(${item.url})` }} />}
+              : item.media === 'model'
+                ? (
+                  <div className={css.thumbImage}>
+                    <a
+                      href={item.url}
+                      download={`wallpaper-${item.id}.${item.modelFileFormat ?? 'glb'}`}
+                      onClick={e => { e.stopPropagation() }}
+                      style={{ color: 'inherit', fontSize: 12 }}
+                    >
+                      ⬇ {item.modelFileFormat?.toUpperCase() ?? 'GLB'}
+                    </a>
+                  </div>
+                  )
+                : <div className={css.thumbImage} style={{ backgroundImage: `url(${item.url})` }} />}
             <div className={css.thumbInfo}>
               <span className={css.thumbName}>{item.name}</span>
               {item.media === 'video' && <span className={`${css.badge}`}>{t('grid.videoBadge')}</span>}
+              {item.media === 'model' && <span className={`${css.badge}`}>{t('grid.modelBadge')}</span>}
               {item.source === 'generated' && <span className={css.badge}>{t('grid.generatedBadge')}</span>}
               {item.moderationStatus === 'passed' && (
                 <span className={`${css.badge} ${css.badgePassed}`}>

@@ -230,14 +230,15 @@ class WallpaperRuntime {
   async getGenerateProviders(): Promise<GenerateProviders> {
     try {
       const response = await fetch('/api/wallpaper/providers')
-      if (!response.ok) return { image: [], video: [] }
+      if (!response.ok) return { image: [], video: [], model: [] }
       const data = await response.json() as Partial<GenerateProviders>
       return {
         image: Array.isArray(data.image) ? data.image : [],
         video: Array.isArray(data.video) ? data.video : [],
+        model: Array.isArray(data.model) ? data.model : [],
       }
     } catch {
-      return { image: [], video: [] }
+      return { image: [], video: [], model: [] }
     }
   }
 

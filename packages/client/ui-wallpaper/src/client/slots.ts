@@ -34,6 +34,7 @@ export interface WallpaperStudioInjected {
 export interface GenerateProviders {
   image: string[]
   video: string[]
+  model: string[]
 }
 
 /** Outcome of one wallpaper generation call: created items or a named error. */
