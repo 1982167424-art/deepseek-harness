@@ -15,12 +15,17 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-storage'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {
+  GenerateImageArgs, GenerateVideoArgs, ImageSize, ImageStyle, MediaProvider,
+} from '@deepseek-ai/dsh-llm-media-gen'
+import { IMAGE_PROVIDERS, VIDEO_PROVIDERS } from '@deepseek-ai/dsh-llm-media-gen'
 import z from '@deepseek-ai/schemastery'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {
-  ListWallpapersResponse, UploadWallpaperResponse,
-  WallpaperActiveSettings, WallpaperFitMode, WallpaperId, WallpaperItem,
-  WallpaperModerationResult, WallpaperSettings,
+  GenerateWallpaperRequest, GenerateWallpaperResponse, ListWallpapersResponse,
+  PolishWallpaperRequest, PolishWallpaperResponse, UploadWallpaperResponse,
+  WallpaperActiveSettings, WallpaperFitMode, WallpaperGenerateKind,
+  WallpaperId, WallpaperItem, WallpaperModerationResult, WallpaperSettings,
 } from './types.ts'
 import { moderateWallpaperImage } from './api/moderation.ts'
 
@@ -49,10 +54,19 @@ export const DEFAULT_OPACITY = 0.85
 export const DEFAULT_BLUR = 0
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png'])
+/** URL imports must end in a JPG/JPEG/PNG path segment, optionally followed by query or fragment. */
+const URL_IMAGE_EXT = /\.(?:jpe?g|png)(?:[?#]|$)/i
+
+/** One stored medium behind a `/api/wallpaper/temp/` URL. */
+interface WallpaperBlob {
+  data: Uint8Array
+  mediaType: string
+}
 
 class WallpaperStore {
   private readonly items = new Map<WallpaperId, WallpaperItem>()
   private readonly order: WallpaperId[] = []
+  private readonly blobs = new Map<WallpaperId, WallpaperBlob>()
 
   add(item: WallpaperItem): void {
     if (!this.items.has(item.id)) {
@@ -73,6 +87,7 @@ class WallpaperStore {
 
   delete(id: WallpaperId): boolean {
     const existed = this.items.delete(id)
+    this.blobs.delete(id)
     const idx = this.order.indexOf(id)
     if (idx >= 0) this.order.splice(idx, 1)
     return existed
@@ -84,6 +99,14 @@ class WallpaperStore {
     const next = { ...existing, ...patch }
     this.items.set(id, next)
     return next
+  }
+
+  setBlob(id: WallpaperId, blob: WallpaperBlob): void {
+    this.blobs.set(id, blob)
+  }
+
+  getBlob(id: WallpaperId): WallpaperBlob | undefined {
+    return this.blobs.get(id)
   }
 }
 
@@ -177,6 +200,11 @@ export class WallpaperService extends Service {
 
           if (fileBytes === undefined && imageUrl === undefined) {
             this.sendJson(res, 400, { error: 'No file or URL provided' })
+            return
+          }
+
+          if (fileBytes === undefined && imageUrl !== undefined && !URL_IMAGE_EXT.test(imageUrl)) {
+            this.sendJson(res, 400, { error: 'URL 导入仅支持 .jpg / .jpeg / .png 图片' })
             return
           }
 
@@ -279,6 +307,128 @@ export class WallpaperService extends Service {
         } catch (error: unknown) {
           this.sendJson(res, 500, { error: error instanceof Error ? error.message : 'Moderation failed' })
         }
+      },
+    }))
+
+    disposers.push(webServer.register({
+      kind: 'exact',
+      path: '/api/wallpaper/providers',
+      handler: (_req: IncomingMessage, res: ServerResponse) => {
+        this.sendJson(res, 200, {
+          image: [...IMAGE_PROVIDERS],
+          video: [...VIDEO_PROVIDERS],
+        })
+      },
+    }))
+
+    disposers.push(webServer.register({
+      kind: 'exact',
+      path: '/api/wallpaper/polish',
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        try {
+          const mediaGen = this.ctx.get('mediaGen')
+          if (mediaGen === undefined) {
+            this.sendJson(res, 503, { error: '媒体生成服务不可用（llm-media-gen 未加载）' })
+            return
+          }
+          const body = await this.parseJsonBody(req)
+          const idea = typeof body?.idea === 'string' ? body.idea : ''
+          if (idea.trim().length === 0) {
+            this.sendJson(res, 400, { error: 'idea is required' })
+            return
+          }
+          const target: WallpaperGenerateKind = body?.target === 'video' ? 'video' : 'image'
+          const request: PolishWallpaperRequest = { idea, target }
+          const result = await mediaGen.polishPrompt(request)
+          const response: PolishWallpaperResponse = {
+            polishedPrompt: result.polishedPrompt,
+            provider: result.provider,
+            model: result.model,
+          }
+          this.sendJson(res, 200, response)
+        } catch (error: unknown) {
+          this.sendJson(res, 500, { error: error instanceof Error ? error.message : '润色失败' })
+        }
+      },
+    }))
+
+    disposers.push(webServer.register({
+      kind: 'exact',
+      path: '/api/wallpaper/generate',
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        try {
+          const mediaGen = this.ctx.get('mediaGen')
+          if (mediaGen === undefined) {
+            this.sendJson(res, 503, { error: '媒体生成服务不可用（llm-media-gen 未加载）' })
+            return
+          }
+          const body = await this.parseJsonBody(req)
+          const request = this.parseGenerateRequest(body)
+          if (request === undefined) {
+            this.sendJson(res, 400, { error: 'prompt is required' })
+            return
+          }
+          const created: WallpaperItem[] = []
+          if (request.kind === 'video') {
+            const args: GenerateVideoArgs = { prompt: request.prompt }
+            if (request.provider !== undefined) args.provider = request.provider as MediaProvider
+            if (request.duration !== undefined) args.duration = request.duration
+            if (request.ratio === '16:9' || request.ratio === '9:16' || request.ratio === '1:1') {
+              args.ratio = request.ratio
+            }
+            const video = await mediaGen.generateVideo(args)
+            created.push(this.storeGeneratedMedia({
+              media: 'video',
+              bytes: video.data,
+              mediaType: video.mediaType,
+              provider: video.provider,
+              prompt: request.prompt,
+            }))
+          } else {
+            const args: GenerateImageArgs = { prompt: request.prompt }
+            if (request.provider !== undefined) args.provider = request.provider as MediaProvider
+            if (request.size !== undefined) args.size = request.size as ImageSize
+            if (request.style !== undefined) args.style = request.style as ImageStyle
+            if (request.n !== undefined) args.n = request.n
+            const images = await mediaGen.generateImage(args)
+            for (const image of images) {
+              created.push(this.storeGeneratedMedia({
+                media: 'image',
+                bytes: image.data,
+                mediaType: image.mediaType,
+                provider: image.provider,
+                prompt: request.prompt,
+              }))
+            }
+          }
+          const response: GenerateWallpaperResponse = { items: created }
+          this.sendJson(res, 200, response)
+        } catch (error: unknown) {
+          this.sendJson(res, 500, { error: error instanceof Error ? error.message : '生成失败' })
+        }
+      },
+    }))
+
+    disposers.push(webServer.register({
+      kind: 'prefix',
+      path: '/api/wallpaper/temp',
+      handler: (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') {
+          res.statusCode = 405
+          res.end()
+          return
+        }
+        const url = new URL(req.url ?? '/', 'http://x')
+        const id = url.pathname.slice('/api/wallpaper/temp/'.length) as WallpaperId
+        const blob = this.store.getBlob(id)
+        if (blob === undefined) {
+          this.sendJson(res, 404, { error: 'Media not found' })
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('Content-Type', blob.mediaType)
+        res.setHeader('Cache-Control', 'private, max-age=86400')
+        res.end(Buffer.from(blob.data.buffer, blob.data.byteOffset, blob.data.byteLength))
       },
     }))
 
@@ -388,6 +538,63 @@ export class WallpaperService extends Service {
       return request.body as Record<string, unknown>
     }
     return undefined
+  }
+
+  /** Validate and narrow one /api/wallpaper/generate JSON body; undefined when unusable. */
+  private parseGenerateRequest(body: Record<string, unknown> | undefined): GenerateWallpaperRequest | undefined {
+    if (body === undefined) return undefined
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+    if (prompt.length === 0) return undefined
+    const request: GenerateWallpaperRequest = {
+      kind: body.kind === 'video' ? 'video' : 'image',
+      prompt,
+    }
+    const providerPool = request.kind === 'video' ? VIDEO_PROVIDERS : IMAGE_PROVIDERS
+    if (typeof body.provider === 'string' && body.provider !== 'auto'
+      && providerPool.includes(body.provider as MediaProvider)) {
+      request.provider = body.provider
+    }
+    if (typeof body.size === 'string' && body.size.length > 0) request.size = body.size as ImageSize
+    if (typeof body.style === 'string' && body.style.length > 0) request.style = body.style as ImageStyle
+    if (typeof body.n === 'number' && Number.isInteger(body.n) && body.n >= 1 && body.n <= 4) {
+      request.n = body.n
+    }
+    if (typeof body.duration === 'number' && body.duration >= 1 && body.duration <= 60) {
+      request.duration = Math.round(body.duration)
+    }
+    if (typeof body.ratio === 'string' && ['16:9', '9:16', '1:1'].includes(body.ratio)) {
+      request.ratio = body.ratio
+    }
+    return request
+  }
+
+  /**
+   * Store one generated medium as a wallpaper item backed by the blob store.
+   * Generated media is provider-moderated upstream, so it enters as `'passed'`.
+   */
+  private storeGeneratedMedia(args: {
+    media: 'image' | 'video'
+    bytes: Uint8Array
+    mediaType: string
+    provider: string
+    prompt: string
+  }): WallpaperItem {
+    const id = `wp_${randomUUID()}` as WallpaperId
+    const tempUrl = `/api/wallpaper/temp/${id}`
+    const shortPrompt = args.prompt.length > 24 ? `${args.prompt.slice(0, 24)}…` : args.prompt
+    const item: WallpaperItem = {
+      id,
+      name: args.media === 'video' ? `动态 · ${shortPrompt}` : `AI · ${shortPrompt}`,
+      url: tempUrl,
+      createdAt: Date.now(),
+      moderationStatus: 'passed',
+      source: 'generated',
+      media: args.media,
+      provider: args.provider,
+    }
+    this.store.add(item)
+    this.store.setBlob(id, { data: args.bytes, mediaType: args.mediaType })
+    return item
   }
 
   getActiveSettings(): WallpaperActiveSettings {

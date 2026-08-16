@@ -1,3 +1,9 @@
+/*
+ * Liquid-glass material system: every surface is a translucent frosted pane
+ * (backdrop blur + saturation) with a specular top highlight and hairline
+ * translucent border, layered over the app background.
+ */
+
 .studio {
   display: flex;
   flex-direction: column;
@@ -9,21 +15,47 @@
   font-size: 16px;
   font-weight: 600;
   margin: 0;
+  color: var(--dsw-alias-label-primary);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.15);
+}
+
+/* Core glass pane shared by panels, dropzone, controls, thumbnails. */
+.dropzone,
+.generatePanel,
+.controls,
+.thumbnail,
+.polishResult {
+  position: relative;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #fff) 42%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 .dropzone {
-  border: 2px dashed var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border: 1.5px dashed color-mix(in srgb, #ffffff 45%, transparent);
   padding: 24px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   color: var(--dsw-alias-label-secondary);
+}
+
+.dropzone:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 32px rgba(0, 0, 0, 0.16);
 }
 
 .dragging {
   border-color: var(--dsw-alias-brand-primary);
-  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  transform: scale(1.01);
 }
 
 .hiddenInput {
@@ -44,40 +76,178 @@
   font-size: 13px;
 }
 
-.urlRow {
+.urlRow,
+.ideaRow {
   display: flex;
   gap: 8px;
 }
 
-.urlInput {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-1);
+.urlInput,
+.promptInput,
+.select {
+  border: 1px solid color-mix(in srgb, #ffffff 30%, transparent);
+  background: color-mix(in srgb, #ffffff 14%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   outline: none;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
-.urlInput:focus {
-  border-color: var(--dsw-alias-brand-primary);
+.urlInput {
+  flex: 1;
+  padding: 9px 14px;
+}
+
+.promptInput {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 14px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.urlInput:focus,
+.promptInput:focus,
+.select:focus {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, transparent);
+  background: color-mix(in srgb, #ffffff 20%, transparent);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.05),
+    0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+}
+
+.urlInput::placeholder,
+.promptInput::placeholder {
+  color: color-mix(in srgb, var(--dsw-alias-label-secondary, #999) 80%, transparent);
 }
 
 .button {
   padding: 8px 16px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid color-mix(in srgb, #ffffff 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 18%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 
-.button:hover {
-  background: var(--dsw-alias-bg-layer-2);
+.button:hover:not(:disabled) {
+  background: color-mix(in srgb, #ffffff 28%, transparent);
+  transform: translateY(-1px);
 }
 
+.button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Generate panel. */
+.generatePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.generateHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.generateTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.kindToggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 12%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.kindBtn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.kindBtnActive {
+  background: color-mix(in srgb, #ffffff 30%, transparent);
+  color: var(--dsw-alias-label-primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.genRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.polishResult {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+}
+
+.polishMeta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  margin-bottom: 6px;
+}
+
+.polishText {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+}
+
+.polishActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.polishNotice {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d59a00) 90%, transparent);
+}
+
+/* Wallpaper grid. */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -85,21 +255,25 @@
 }
 
 .thumbnail {
-  position: relative;
-  border: 2px solid transparent;
-  border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  background: var(--dsw-alias-bg-layer-1);
-  transition: border-color 0.15s, transform 0.15s;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 
 .thumbnail:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 12px 36px rgba(0, 0, 0, 0.18);
 }
 
 .selected {
-  border-color: var(--dsw-alias-brand-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 25%, transparent),
+    0 8px 32px rgba(0, 0, 0, 0.15);
 }
 
 .thumbImage {
@@ -110,11 +284,20 @@
   background-repeat: no-repeat;
 }
 
+.thumbVideo {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: rgba(0, 0, 0, 0.2);
+}
+
 .thumbInfo {
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-items: flex-start;
 }
 
 .thumbName {
@@ -123,37 +306,43 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .badge {
   display: inline-block;
   font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
   width: fit-content;
-  background: var(--dsw-alias-bg-layer-2);
+  background: color-mix(in srgb, #ffffff 20%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
   color: var(--dsw-alias-label-secondary);
 }
 
 .badgePassed {
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 15%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 18%, transparent);
   color: var(--dsw-alias-state-success-primary);
 }
 
 .badgeRejected {
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 18%, transparent);
   color: var(--dsw-alias-state-error-primary);
 }
 
 .deleteBtn {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 6px;
+  right: 6px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: none;
-  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid color-mix(in srgb, #ffffff 30%, transparent);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: white;
   font-size: 14px;
   line-height: 1;
@@ -162,35 +351,42 @@
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s;
 }
 
 .thumbnail:hover .deleteBtn {
   opacity: 1;
 }
 
+.deleteBtn:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
 .activeMark {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 6px;
+  left: 6px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 85%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   color: white;
   font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+/* Fit / opacity / blur controls. */
 .controls {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px;
-  background: var(--dsw-alias-bg-layer-1);
-  border-radius: 8px;
+  padding: 14px 16px;
 }
 
 .controlRow {
@@ -206,13 +402,7 @@
 }
 
 .select {
-  padding: 6px 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  outline: none;
+  padding: 7px 12px;
 }
 
 .slider {
@@ -220,6 +410,7 @@
   accent-color: var(--dsw-alias-brand-primary);
 }
 
+/* Preview. */
 .previewSection {
   display: flex;
   flex-direction: column;
@@ -231,13 +422,30 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.preview {
+.preview,
+.previewVideo {
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 8px;
-  background-color: var(--dsw-alias-bg-layer-2);
-  background-position: center;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, #ffffff 30%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 8px 32px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
   transition: opacity 0.2s, filter 0.2s;
+}
+
+.preview {
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-layer-2, #eee) 50%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background-position: center;
+}
+
+.previewVideo {
+  object-fit: cover;
+  display: block;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .actions {
@@ -246,19 +454,31 @@
 }
 
 .primaryBtn {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 6px;
-  background: var(--dsw-alias-brand-primary);
+  padding: 9px 22px;
+  border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dsw-alias-brand-primary) 88%, #ffffff 12%) 0%,
+    var(--dsw-alias-brand-primary) 100%
+  );
   color: white;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 6px 20px color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
 }
 
-.primaryBtn:hover {
-  opacity: 0.9;
+.primaryBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 26px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
 }
 
 .primaryBtn:disabled {

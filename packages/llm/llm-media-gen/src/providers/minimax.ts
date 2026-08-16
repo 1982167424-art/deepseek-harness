@@ -10,6 +10,8 @@ import type {
 } from '../types.ts'
 
 const DEFAULT_MINIMAX_BASE_URL = 'https://api.minimax.chat/v1'
+const DEFAULT_MINIMAX_IMAGE_MODEL = 'abab6.5-img'
+const DEFAULT_MINIMAX_VIDEO_MODEL = 'MiniMax-H3'
 
 function parseSizeToMM(size: ImageSize | undefined): { w: number; h: number } {
   switch (size) {
@@ -46,7 +48,7 @@ export async function generateImageMiniMax(
   const n = Math.max(1, Math.min(4, request.n ?? 1))
 
   const body: Record<string, unknown> = {
-    model: request.model ?? 'abab6.5-img',
+    model: request.model ?? DEFAULT_MINIMAX_IMAGE_MODEL,
     prompt: request.prompt,
     size: `${w}x${h}`,
     n,
@@ -128,7 +130,7 @@ export async function generateVideoMiniMax(
   const duration = request.duration ?? 5
 
   const body: Record<string, unknown> = {
-    model: request.model ?? 'abab6.5-video',
+    model: request.model ?? DEFAULT_MINIMAX_VIDEO_MODEL,
     prompt: request.prompt,
     duration,
   }

@@ -13,10 +13,12 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { WallpaperStudio } from './WallpaperStudio.tsx'
 import type {
+  GenerateProviders, GenerateWallpaperResult, PolishWallpaperResult,
   WallpaperStudioInjected, UploadResult,
 } from './slots.ts'
 import { en, zh, type WallpaperKey } from './locales.ts'
 import type {
+  GenerateWallpaperRequest, PolishWallpaperRequest,
   WallpaperActiveSettings, WallpaperId, WallpaperItem,
   WallpaperModerationResult, WallpaperSettings,
 } from '../types.ts'
@@ -224,6 +226,57 @@ class WallpaperRuntime {
     }
     return result
   }
+
+  async getGenerateProviders(): Promise<GenerateProviders> {
+    try {
+      const response = await fetch('/api/wallpaper/providers')
+      if (!response.ok) return { image: [], video: [] }
+      const data = await response.json() as Partial<GenerateProviders>
+      return {
+        image: Array.isArray(data.image) ? data.image : [],
+        video: Array.isArray(data.video) ? data.video : [],
+      }
+    } catch {
+      return { image: [], video: [] }
+    }
+  }
+
+  async generateWallpaper(request: GenerateWallpaperRequest): Promise<GenerateWallpaperResult> {
+    try {
+      const response = await fetch('/api/wallpaper/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+      const data = await response.json() as GenerateWallpaperResult
+      if (!response.ok) {
+        return { ok: false, error: data.error ?? 'Generate failed' }
+      }
+      return { ok: true, items: data.items ?? [] }
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Generate failed' }
+    }
+  }
+
+  async polishWallpaper(request: PolishWallpaperRequest): Promise<PolishWallpaperResult> {
+    try {
+      const response = await fetch('/api/wallpaper/polish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+      const data = await response.json() as PolishWallpaperResult
+      if (!response.ok || typeof data.polishedPrompt !== 'string') {
+        return { ok: false, error: data.error ?? 'Polish failed' }
+      }
+      const out: PolishWallpaperResult = { ok: true, polishedPrompt: data.polishedPrompt }
+      if (data.provider !== undefined) out.provider = data.provider
+      if (data.model !== undefined) out.model = data.model
+      return out
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Polish failed' }
+    }
+  }
 }
 
 export function apply(ctx: ClientContext): void {
@@ -255,6 +308,16 @@ export function apply(ctx: ClientContext): void {
     },
     deleteWallpaper: async id => runtime.deleteWallpaper(id),
     getActiveSettings: () => runtime.getActiveSettings(),
+    getGenerateProviders: () => runtime.getGenerateProviders(),
+    generateWallpaper: async request => {
+      const result = await runtime.generateWallpaper(request)
+      if (result.ok) {
+        const list = await runtime.listWallpapers()
+        actions.setItems(list)
+      }
+      return result
+    },
+    polishWallpaper: request => runtime.polishWallpaper(request),
   })
 
   ctx.effect(() => {

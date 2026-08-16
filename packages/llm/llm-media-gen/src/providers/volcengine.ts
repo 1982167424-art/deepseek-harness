@@ -11,7 +11,16 @@ import type {
 } from '../types.ts'
 
 const DEFAULT_VOLCENGINE_BASE_URL = 'https://visual.volcengineapi.com'
-const DEFAULT_VOLCENGINE_IMAGE_MODEL = 'doubao-1.5-pro'
+const DEFAULT_VOLCENGINE_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com'
+const DEFAULT_VOLCENGINE_IMAGE_MODEL = 'doubao-seedream-5-0'
+const DEFAULT_VOLCENGINE_VIDEO_MODEL = 'doubao-seedance-2-5'
+const ARK_POLL_INTERVAL_MS = 2000
+const ARK_POLL_TIMEOUT_MS = 300_000
+
+/** ARK model-series detection: Seedream images and Seedance videos live on the ARK API. */
+function usesArk(model: string): boolean {
+  return /^(doubao-seedream|doubao-seedance)/.test(model)
+}
 
 function parseSize(size: ImageSize | undefined): { width: number; height: number } {
   switch (size) {
@@ -50,7 +59,105 @@ function normalizeBaseURL(baseURL: string | undefined): string {
 export interface VolcengineConfig {
   apiKey: string
   baseURL?: string
-  model?: string
+  /** Ark (model-routing) base URL for Seedream/Seedance model series. */
+  arkBaseURL?: string
+  /** Image model id; Seedream series route to the Ark images API. */
+  imageModel?: string
+  /** Video model id; Seedance series route to the Ark contents-task API. */
+  videoModel?: string
+}
+
+function arkBase(config: VolcengineConfig): string {
+  return (config.arkBaseURL ?? DEFAULT_VOLCENGINE_ARK_BASE_URL).replace(/\/$/, '')
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(signal.reason ?? new Error('aborted'))
+    }, { once: true })
+  })
+}
+
+/** Ark images API for the Seedream series: sync call returning URL/b64 payloads. */
+async function generateImageArk(
+  config: VolcengineConfig,
+  request: VolcengineImageGenRequest,
+  signal?: AbortSignal,
+): Promise<GeneratedImage[]> {
+  const { width, height } = parseSize(request.size)
+  const n = Math.max(1, Math.min(4, request.n ?? 1))
+  const model = config.imageModel ?? DEFAULT_VOLCENGINE_IMAGE_MODEL
+
+  const body: Record<string, unknown> = {
+    model,
+    prompt: request.prompt,
+    size: `${width}x${height}`,
+    response_format: 'url',
+    watermark: false,
+  }
+  if (n > 1) body.seq = n
+  if (request.negativePrompt !== undefined && request.negativePrompt.length > 0) {
+    body.negative_prompt = request.negativePrompt
+  }
+
+  const headers: Record<string, string> = {
+    'authorization': `Bearer ${config.apiKey}`,
+    'content-type': 'application/json',
+  }
+
+  let response: Response
+  try {
+    const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(body) }
+    if (signal !== undefined) init.signal = signal
+    response = await fetch(`${arkBase(config)}/api/v3/images/generations`, init)
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw new LlmError('Volcengine Ark image generation request failed', 'TRANSPORT', { cause: error })
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new LlmError(
+      `Volcengine Ark image API error (HTTP ${response.status}): ${text.slice(0, 500)}`,
+      `HTTP_${response.status}`,
+      { status: response.status },
+    )
+  }
+  const data = await response.json() as {
+    data?: Array<{ url?: string; b64_json?: string; revised_prompt?: string }>
+  }
+  const items = data.data ?? []
+  if (items.length === 0) {
+    throw new LlmError('Volcengine Ark image API returned no images', 'EMPTY_RESPONSE')
+  }
+
+  const results: GeneratedImage[] = []
+  for (const item of items) {
+    let imageData: Uint8Array
+    if (item.b64_json) {
+      imageData = Uint8Array.from(Buffer.from(item.b64_json, 'base64'))
+    } else if (item.url) {
+      const imgInit: RequestInit = {}
+      if (signal !== undefined) imgInit.signal = signal
+      const imgResp = await fetch(item.url, imgInit)
+      if (!imgResp.ok || !imgResp.body) continue
+      imageData = new Uint8Array(await imgResp.arrayBuffer())
+    } else {
+      continue
+    }
+    const generated: GeneratedImage = {
+      data: imageData,
+      mediaType: 'image/png',
+      width,
+      height,
+      revisedPrompt: item.revised_prompt ?? request.prompt,
+      provider: 'volcengine',
+    }
+    results.push(generated)
+  }
+  return results
 }
 
 export async function generateImageVolcengine(
@@ -58,13 +165,16 @@ export async function generateImageVolcengine(
   request: VolcengineImageGenRequest,
   signal?: AbortSignal,
 ): Promise<GeneratedImage[]> {
+  const model = config.imageModel ?? DEFAULT_VOLCENGINE_IMAGE_MODEL
+  if (usesArk(model)) return generateImageArk(config, request, signal)
+
   const baseURL = normalizeBaseURL(config.baseURL)
   const { width, height } = parseSize(request.size)
   const n = Math.max(1, Math.min(4, request.n ?? 1))
 
   const body: Record<string, unknown> = {
     req_key: `img_${Date.now()}`,
-    model: config.model ?? DEFAULT_VOLCENGINE_IMAGE_MODEL,
+    model,
     prompt: request.prompt,
     width,
     height,
@@ -143,11 +253,119 @@ export async function generateImageVolcengine(
   return results
 }
 
+/** Ark contents-task API for the Seedance series: submit, poll, download. */
+async function generateVideoArk(
+  config: VolcengineConfig,
+  request: VolcengineVideoGenRequest,
+  signal?: AbortSignal,
+): Promise<GeneratedVideo> {
+  const model = request.model ?? config.videoModel ?? DEFAULT_VOLCENGINE_VIDEO_MODEL
+  const duration = request.duration ?? 5
+  const ratio = request.ratio ?? '16:9'
+  const base = arkBase(config)
+  const headers: Record<string, string> = {
+    'authorization': `Bearer ${config.apiKey}`,
+    'content-type': 'application/json',
+  }
+
+  const submitBody = {
+    model,
+    content: [{
+      type: 'text',
+      text: `--ratio ${ratio} --duration ${duration}${request.size !== undefined ? ` --resolution ${request.size}` : ''} ${request.prompt}`,
+    }],
+  }
+
+  let submit: Response
+  try {
+    const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(submitBody) }
+    if (signal !== undefined) init.signal = signal
+    submit = await fetch(`${base}/api/v3/contents/generations/tasks`, init)
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw new LlmError('Volcengine Ark video submission failed', 'TRANSPORT', { cause: error })
+  }
+  if (!submit.ok) {
+    const text = await submit.text().catch(() => '')
+    throw new LlmError(
+      `Volcengine Ark video submission error (HTTP ${submit.status}): ${text.slice(0, 500)}`,
+      `HTTP_${submit.status}`,
+      { status: submit.status },
+    )
+  }
+  const submitted = await submit.json() as { id?: string }
+  const taskId = submitted.id
+  if (taskId === undefined) {
+    throw new LlmError('Volcengine Ark video submission returned no task id', 'EMPTY_RESPONSE')
+  }
+
+  const deadline = Date.now() + ARK_POLL_TIMEOUT_MS
+  let videoUrl: string | undefined
+  for (;;) {
+    if (signal?.aborted === true) throw new Error('aborted')
+    if (Date.now() > deadline) {
+      throw new LlmError('Volcengine Ark video task did not settle in time', 'TIMEOUT')
+    }
+    await sleep(ARK_POLL_INTERVAL_MS, signal)
+    const pollInit: RequestInit = { headers }
+    if (signal !== undefined) pollInit.signal = signal
+    const poll = await fetch(`${base}/api/v3/contents/generations/tasks/${taskId}`, pollInit)
+    if (!poll.ok) {
+      throw new LlmError(
+        `Volcengine Ark video task poll error (HTTP ${poll.status})`,
+        `HTTP_${poll.status}`,
+        { status: poll.status },
+      )
+    }
+    const status = await poll.json() as {
+      status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+      error?: { message?: string }
+      content?: { video_url?: string }
+    }
+    if (status.status === 'succeeded') {
+      videoUrl = status.content?.video_url
+      break
+    }
+    if (status.status === 'failed' || status.status === 'cancelled') {
+      throw new LlmError(
+        `Volcengine Ark video task ended as ${status.status}: ${status.error?.message ?? ''}`,
+        'PROVIDER_ERROR',
+      )
+    }
+  }
+  if (videoUrl === undefined) {
+    throw new LlmError('Volcengine Ark video task produced no video URL', 'EMPTY_RESPONSE')
+  }
+
+  const vidInit: RequestInit = {}
+  if (signal !== undefined) vidInit.signal = signal
+  const videoResp = await fetch(videoUrl, vidInit)
+  if (!videoResp.ok || !videoResp.body) {
+    throw new LlmError('Volcengine video download failed', 'TRANSPORT')
+  }
+  const vWidth = ratio === '9:16' ? 720 : 1280
+  const vHeight = ratio === '9:16' ? 1280 : 720
+  return {
+    data: new Uint8Array(await videoResp.arrayBuffer()),
+    mediaType: 'video/mp4',
+    width: vWidth,
+    height: vHeight,
+    duration,
+    provider: 'volcengine',
+  }
+}
+
 export async function generateVideoVolcengine(
   config: VolcengineConfig,
   request: VolcengineVideoGenRequest,
   signal?: AbortSignal,
 ): Promise<GeneratedVideo> {
+  const model = request.model ?? config.videoModel ?? DEFAULT_VOLCENGINE_VIDEO_MODEL
+  if (usesArk(model)) {
+    const arkRequest = { ...request, model }
+    return generateVideoArk(config, arkRequest, signal)
+  }
+
   const baseURL = normalizeBaseURL(config.baseURL)
   const duration = request.duration ?? 5
   const fps = request.fps ?? 24
@@ -155,7 +373,7 @@ export async function generateVideoVolcengine(
 
   const body: Record<string, unknown> = {
     req_key: `vid_${Date.now()}`,
-    model: 'doubao-v1',
+    model,
     prompt: request.prompt,
     duration,
     fps,
