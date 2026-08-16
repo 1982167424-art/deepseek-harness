@@ -28,6 +28,7 @@ import type {
   WallpaperActiveSettings, WallpaperFitMode, WallpaperGenerateKind,
   WallpaperId, WallpaperItem, WallpaperModerationResult, WallpaperSettings,
 } from './types.ts'
+import { DEFAULT_FIT, DEFAULT_OPACITY, DEFAULT_BLUR } from './types.ts'
 import { moderateWallpaperImage } from './api/moderation.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -50,9 +51,7 @@ const WALLPAPER_SETTINGS_SCHEMA = z.object({
   blur: z.number().min(0).max(20).default(0),
 })
 
-export const DEFAULT_FIT: WallpaperFitMode = 'cover'
-export const DEFAULT_OPACITY = 0.85
-export const DEFAULT_BLUR = 0
+export { DEFAULT_FIT, DEFAULT_OPACITY, DEFAULT_BLUR } from './types.ts'
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png'])
 /** URL imports must end in a JPG/JPEG/PNG path segment, optionally followed by query or fragment. */

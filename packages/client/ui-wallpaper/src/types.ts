@@ -9,6 +9,10 @@ export type WallpaperId = string & Branded<'WallpaperId'>
 
 export type WallpaperFitMode = 'cover' | 'contain' | 'tile' | 'stretch'
 
+export const DEFAULT_FIT: WallpaperFitMode = 'cover'
+export const DEFAULT_OPACITY = 0.85
+export const DEFAULT_BLUR = 0
+
 export type WallpaperModerationStatus = 'pending' | 'passed' | 'rejected'
 
 export interface WallpaperItem {

@@ -24,8 +24,10 @@ import type {
 } from '../types.ts'
 import {
   DEFAULT_FIT, DEFAULT_OPACITY, DEFAULT_BLUR,
-  WALLPAPER_SETTINGS_NAMESPACE,
-} from '../index.ts'
+} from '../types.ts'
+
+/** Settings namespace; the host half validates this via settingsNamespace(). */
+const WALLPAPER_SETTINGS_NAMESPACE = 'ui-wallpaper'
 
 export type {
   WallpaperStudioInjected, UploadResult,

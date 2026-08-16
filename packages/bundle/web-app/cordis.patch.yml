@@ -70,11 +70,6 @@
     - id: task-board
       name: '@deepseek-ai/dsh-task-board'
 
-    # Media generation capability: ordered-fallback image/video/3D providers
-    # plus the charged prompt-polish service the wallpaper studio calls.
-    - id: llm-media-gen
-      name: '@deepseek-ai/dsh-llm-media-gen'
-
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
